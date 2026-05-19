@@ -41,6 +41,13 @@ def _env(postgres_url: str, redis_url: str) -> Iterator[None]:
     os.environ["DATABASE_URL"] = postgres_url
     os.environ["REDIS_URL"] = redis_url
     os.environ["LOG_LEVEL"] = "INFO"
+    os.environ["OPENROUTER_API_KEY"] = "test-openrouter-key"
+    os.environ["LLM_BASE_URL"] = "https://openrouter.ai/api/v1"
+    os.environ["LLM_SCRIPT_MODEL"] = "anthropic/claude-haiku-4.5"
+    os.environ["LLM_SCRIPT_MAX_TOKENS"] = "4000"
+    os.environ["LLM_TIMEOUT_SECONDS"] = "60"
+    os.environ["MAX_SCRIPT_COST_USD"] = "0.10"
+    os.environ["MAX_SCENES_PER_VIDEO"] = "12"
     from app.config import get_settings
     from app.db.session import get_engine, get_session_factory
 
