@@ -129,6 +129,8 @@ curl -sS -X DELETE http://localhost:8000/api/videos/42 \
 
 **Response 200** — same shape as `GET /api/videos/{id}` with `status: "cancelled"`.
 
+Also publishes a `cancelled` SSE event on the job's progress channel so any active stream subscriber closes immediately rather than waiting for the worker to observe the cancel at its next checkpoint.
+
 **Errors**
 
 | Status | When |
@@ -141,7 +143,7 @@ curl -sS -X DELETE http://localhost:8000/api/videos/42 \
 
 ## `GET /api/videos/{id}/events` — SSE progress stream
 
-Server-Sent Events stream. Emits a `snapshot` event first (the current job state) then forwards every `transition` / `progress` / `failed` / `done` event published by the worker. Closes on the first terminal status received, or if the job was already terminal at request time.
+Server-Sent Events stream. Emits a `snapshot` event first (the current job state) then forwards every `transition` / `progress` / `failed` / `done` / `cancelled` event published by the worker or the cancel endpoint. Closes on the first terminal status received, or if the job was already terminal at request time.
 
 ```bash
 curl -N -sS http://localhost:8000/api/videos/42/events \

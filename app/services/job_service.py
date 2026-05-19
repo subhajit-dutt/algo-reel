@@ -7,7 +7,9 @@ from app.domain.enums import JobStatus
 from app.domain.state_machine import TERMINAL_JOB_STATUSES
 from app.logging import get_logger
 from app.repositories.job_repo import JobRepo
+from app.schemas.event import ProgressEvent
 from app.schemas.job import CreateJobRequest
+from app.services.progress_publisher import ProgressPublisher
 
 log = get_logger("services.job")
 
@@ -21,10 +23,11 @@ class JobNotCancellableError(Exception):
 
 
 class JobService:
-    def __init__(self, *, session: AsyncSession, arq: Any) -> None:
+    def __init__(self, *, session: AsyncSession, arq: Any, redis: Any) -> None:
         self._session = session
         self._repo = JobRepo(session)
         self._arq = arq
+        self._publisher = ProgressPublisher(redis)
 
     async def create_job(self, req: CreateJobRequest) -> Job:
         job = await self._repo.create(
@@ -57,7 +60,18 @@ class JobService:
             if current is None:
                 raise JobNotFoundError(f"job {job_id} not found")
             raise JobNotCancellableError(f"job {job_id} is in terminal state {current.value}")
+        # Commit the cancel before publishing so an SSE consumer's subsequent
+        # snapshot read (if it reconnects) is consistent with the event payload.
+        await self._session.commit()
         log.info("job.cancelled", job_id=job_id)
+        await self._publisher.publish(
+            ProgressEvent(
+                event="cancelled",
+                job_id=job_id,
+                status=JobStatus.CANCELLED,
+                progress={},
+            )
+        )
         refreshed = await self._repo.get(job_id)
         assert refreshed is not None
         return refreshed

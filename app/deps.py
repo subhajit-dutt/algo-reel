@@ -31,5 +31,6 @@ def get_redis(request: Request) -> Any:
 async def get_job_service(
     session: AsyncSession = Depends(get_db),
     arq: ArqRedis = Depends(get_arq),
+    redis: Any = Depends(get_redis),
 ) -> JobService:
-    return JobService(session=session, arq=arq)
+    return JobService(session=session, arq=arq, redis=redis)

@@ -21,10 +21,19 @@ class _FakeArqJob:
         self.job_id = job_id
 
 
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.published: list[tuple[str, str]] = []
+
+    async def publish(self, channel: str, data: str) -> int:
+        self.published.append((channel, data))
+        return 1
+
+
 class TestJobServiceCreate:
     async def test_create_inserts_job_and_enqueues(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         req = CreateJobRequest(
             prompt="explain merge sort", renderer=Renderer.MANIM, duration_target=60, voice="alloy"
         )
@@ -40,7 +49,7 @@ class TestJobServiceCreate:
 class TestJobServiceCancel:
     async def test_cancel_in_flight_transitions_to_cancelled(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         req = CreateJobRequest(
             prompt="x", renderer=Renderer.MANIM, duration_target=60, voice="alloy"
         )
@@ -52,7 +61,7 @@ class TestJobServiceCancel:
 
     async def test_cancel_missing_raises_not_found(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         with pytest.raises(JobNotFoundError):
             await service.cancel_job(9999)
 
@@ -64,7 +73,7 @@ class TestJobServiceCancel:
         self, clean_db: AsyncSession, terminal: JobStatus
     ) -> None:
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         req = CreateJobRequest(
             prompt="x", renderer=Renderer.MANIM, duration_target=60, voice="alloy"
         )
@@ -81,7 +90,7 @@ class TestJobServiceCancel:
         from sqlalchemy import text
 
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         req = CreateJobRequest(
             prompt="x", renderer=Renderer.MANIM, duration_target=60, voice="alloy"
         )
@@ -100,7 +109,7 @@ class TestJobServiceCancel:
 class TestJobServiceGet:
     async def test_get_returns_job(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         req = CreateJobRequest(
             prompt="x", renderer=Renderer.MANIM, duration_target=60, voice="alloy"
         )
@@ -112,6 +121,6 @@ class TestJobServiceGet:
 
     async def test_get_missing_raises_not_found(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
-        service = JobService(session=clean_db, arq=arq)
+        service = JobService(session=clean_db, arq=arq, redis=_FakeRedis())
         with pytest.raises(JobNotFoundError):
             await service.get_job(9999)

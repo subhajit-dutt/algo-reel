@@ -1,6 +1,5 @@
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -39,10 +38,7 @@ async def stream_events(
         status=snapshot_status,
         progress=job.progress,
         error=job.error,
-        ts=datetime.now(tz=UTC),
     )
-
-    terminal_values = {s.value for s in TERMINAL_JOB_STATUSES}
 
     async def _gen() -> AsyncIterator[dict[str, str]]:
         yield {"event": "snapshot", "data": snapshot.model_dump_json()}
@@ -56,12 +52,16 @@ async def stream_events(
                 if msg["type"] != "message":
                     continue
                 data = msg["data"]
-                parsed = json.loads(data)
+                try:
+                    parsed = json.loads(data)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("event payload is not a JSON object")
+                except (ValueError, TypeError):
+                    continue  # malformed message; skip rather than crash the stream
                 yield {"event": parsed.get("event", "progress"), "data": data}
-                if parsed.get("status") in terminal_values:
+                if parsed.get("status") in TERMINAL_JOB_STATUSES:
                     return
         finally:
-            await pubsub.unsubscribe()
-            await pubsub.aclose()
+            await pubsub.aclose()  # aclose unsubscribes implicitly
 
     return EventSourceResponse(_gen(), ping=15)

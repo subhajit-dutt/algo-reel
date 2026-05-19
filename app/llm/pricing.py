@@ -24,6 +24,10 @@ _QUANT = Decimal("0.0001")
 
 
 def compute_cost(model: str, *, input_tokens: int, output_tokens: int) -> Decimal:
+    if input_tokens < 0 or output_tokens < 0:
+        raise ValueError(
+            f"token counts must be non-negative: input={input_tokens} output={output_tokens}"
+        )
     if model not in MODEL_PRICING:
         raise UnknownModelError(f"no pricing entry for model: {model}")
     p = MODEL_PRICING[model]
