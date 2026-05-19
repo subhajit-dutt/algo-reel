@@ -1,11 +1,13 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import redis.asyncio as redis_async
 from arq import create_pool
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.api.videos import router as videos_router
+from app.config import get_settings
 from app.logging import configure_logging, get_logger
 from app.workers.arq_settings import ORCHESTRATOR_QUEUE, redis_settings
 
@@ -16,9 +18,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     log = get_logger("app")
     log.info("app.start")
     app.state.arq = await create_pool(redis_settings(), default_queue_name=ORCHESTRATOR_QUEUE)
+    app.state.redis = redis_async.from_url(get_settings().redis_url, decode_responses=True)
     try:
         yield
     finally:
+        await app.state.redis.aclose()
         await app.state.arq.aclose()
         log.info("app.stop")
 

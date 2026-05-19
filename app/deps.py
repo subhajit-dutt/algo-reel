@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Any
 
 from arq.connections import ArqRedis
 from fastapi import Depends, Request
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import session_scope
 from app.services.job_service import JobService
+from app.services.progress_publisher import ProgressPublisher
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -18,6 +20,17 @@ def get_arq(request: Request) -> ArqRedis:
     if pool is None:
         raise RuntimeError("arq pool not initialised on app.state — check lifespan")
     return pool
+
+
+def get_redis(request: Request) -> Any:
+    client = getattr(request.app.state, "redis", None)
+    if client is None:
+        raise RuntimeError("redis client not initialised on app.state — check lifespan")
+    return client
+
+
+def get_progress_publisher(redis: Any = Depends(get_redis)) -> ProgressPublisher:
+    return ProgressPublisher(redis)
 
 
 async def get_job_service(
