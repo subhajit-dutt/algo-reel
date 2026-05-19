@@ -85,3 +85,16 @@ async def clean_db(db_session: AsyncSession) -> AsyncIterator[AsyncSession]:
     )
     await db_session.commit()
     yield db_session
+
+
+@pytest_asyncio.fixture
+async def redis_client(_env: None) -> AsyncIterator["object"]:
+    import redis.asyncio as redis_async
+
+    from app.config import get_settings
+
+    client = redis_async.from_url(get_settings().redis_url, decode_responses=True)
+    try:
+        yield client
+    finally:
+        await client.aclose()
