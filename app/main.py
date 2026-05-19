@@ -6,6 +6,7 @@ from arq import create_pool
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.api.sse import router as sse_router
 from app.api.videos import router as videos_router
 from app.config import get_settings
 from app.logging import configure_logging, get_logger
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="algo-reel", version="0.1.0", lifespan=_lifespan)
     app.include_router(health_router)
     app.include_router(videos_router)
+    app.include_router(sse_router)
     return app
 
 
