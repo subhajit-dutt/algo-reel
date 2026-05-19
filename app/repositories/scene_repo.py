@@ -1,0 +1,43 @@
+from decimal import Decimal
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import Scene
+from app.domain.enums import SceneStatus
+
+
+class SceneRepo:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def bulk_insert_stubs(self, *, job_id: int, n: int) -> list[Scene]:
+        scenes = [
+            Scene(
+                job_id=job_id,
+                index=i,
+                narration=f"[stub narration {i}]",
+                visual_prompt=f"[stub visual {i}]",
+                duration_seconds=Decimal("0.00"),
+                status=SceneStatus.PENDING.value,
+            )
+            for i in range(n)
+        ]
+        self._session.add_all(scenes)
+        await self._session.flush()
+        for s in scenes:
+            await self._session.refresh(s)
+        await self._session.commit()
+        return scenes
+
+    async def list_by_job(self, job_id: int) -> list[Scene]:
+        result = await self._session.execute(
+            select(Scene).where(Scene.job_id == job_id).order_by(Scene.index)
+        )
+        return list(result.scalars().all())
+
+    async def update_status(self, scene_id: int, status: SceneStatus) -> None:
+        await self._session.execute(
+            update(Scene).where(Scene.id == scene_id).values(status=status.value)
+        )
+        await self._session.commit()
