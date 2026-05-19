@@ -22,9 +22,7 @@ class _FakeArqJob:
 
 
 class TestJobServiceCreate:
-    async def test_create_inserts_job_and_enqueues(
-        self, clean_db: AsyncSession
-    ) -> None:
+    async def test_create_inserts_job_and_enqueues(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
         service = JobService(session=clean_db, arq=arq)
         req = CreateJobRequest(
@@ -40,9 +38,7 @@ class TestJobServiceCreate:
 
 
 class TestJobServiceCancel:
-    async def test_cancel_in_flight_transitions_to_cancelled(
-        self, clean_db: AsyncSession
-    ) -> None:
+    async def test_cancel_in_flight_transitions_to_cancelled(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
         service = JobService(session=clean_db, arq=arq)
         req = CreateJobRequest(
@@ -54,9 +50,7 @@ class TestJobServiceCancel:
 
         assert cancelled.status == JobStatus.CANCELLED.value
 
-    async def test_cancel_missing_raises_not_found(
-        self, clean_db: AsyncSession
-    ) -> None:
+    async def test_cancel_missing_raises_not_found(self, clean_db: AsyncSession) -> None:
         arq = _FakeArqPool()
         service = JobService(session=clean_db, arq=arq)
         with pytest.raises(JobNotFoundError):

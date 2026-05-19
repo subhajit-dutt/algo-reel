@@ -1,7 +1,7 @@
 import pytest
 
 from app.domain.enums import JobStatus
-from app.domain.state_machine import IllegalStateTransition, assert_transition
+from app.domain.state_machine import IllegalStateTransitionError, assert_transition
 
 
 class TestJobStatusTransitions:
@@ -36,14 +36,14 @@ class TestJobStatusTransitions:
         ],
     )
     def test_terminal_states_have_no_outgoing_edges(self, src: JobStatus) -> None:
-        with pytest.raises(IllegalStateTransition):
+        with pytest.raises(IllegalStateTransitionError):
             assert_transition(src, JobStatus.RENDERING)
 
     def test_queued_to_done_is_disallowed(self) -> None:
-        with pytest.raises(IllegalStateTransition) as exc:
+        with pytest.raises(IllegalStateTransitionError) as exc:
             assert_transition(JobStatus.QUEUED, JobStatus.DONE)
         assert "queued" in str(exc.value) and "done" in str(exc.value)
 
     def test_idempotent_same_state_is_disallowed(self) -> None:
-        with pytest.raises(IllegalStateTransition):
+        with pytest.raises(IllegalStateTransitionError):
             assert_transition(JobStatus.RENDERING, JobStatus.RENDERING)

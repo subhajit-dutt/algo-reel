@@ -38,9 +38,7 @@ class TestRunVideo:
         assert len(scenes) == STUB_SCENE_COUNT
         assert all(s.status == SceneStatus.DONE.value for s in scenes)
 
-    async def test_aborts_when_already_cancelled(
-        self, clean_db: AsyncSession, job_id: int
-    ) -> None:
+    async def test_aborts_when_already_cancelled(self, clean_db: AsyncSession, job_id: int) -> None:
         await JobRepo(clean_db).update_status(job_id, JobStatus.CANCELLED)
 
         await run_video({"_test_no_sleep": True}, job_id)

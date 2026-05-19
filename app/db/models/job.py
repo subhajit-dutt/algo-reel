@@ -1,4 +1,3 @@
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -37,9 +36,7 @@ class Job(Base, TimestampMixin):
     renderer: Mapped[str] = mapped_column(String(16), nullable=False)
     voice: Mapped[str] = mapped_column(String(64), nullable=False, default="alloy")
     duration_target_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default=JobStatus.QUEUED.value
-    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=JobStatus.QUEUED.value)
     progress: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

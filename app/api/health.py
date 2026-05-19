@@ -15,10 +15,10 @@ async def healthz() -> dict[str, str]:
 
 
 @router.get("/readyz")
-async def readyz(settings: Settings = Depends(get_settings)) -> dict[str, object]:
+async def readyz(settings: Settings = Depends(get_settings)) -> dict[str, bool]:
     pg_ok = await _ping_postgres()
     redis_ok = await _ping_redis(settings)
-    body = {"postgres": pg_ok, "redis": redis_ok}
+    body: dict[str, bool] = {"postgres": pg_ok, "redis": redis_ok}
     if not (pg_ok and redis_ok):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=body)
     return body
