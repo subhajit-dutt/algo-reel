@@ -41,8 +41,11 @@ def _env(postgres_url: str, redis_url: str) -> Iterator[None]:
     os.environ["REDIS_URL"] = redis_url
     os.environ["LOG_LEVEL"] = "INFO"
     from app.config import get_settings
+    from app.db.session import get_engine, get_session_factory
 
     get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
     yield
 
 

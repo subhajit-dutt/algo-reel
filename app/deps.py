@@ -6,12 +6,12 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
-from app.db.session import SessionFactory
+from app.db.session import get_session_factory
 from app.services.job_service import JobService
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    async with SessionFactory() as session:
+    async with get_session_factory()() as session:
         try:
             yield session
         except Exception:

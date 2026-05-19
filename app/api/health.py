@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 
 from app.config import Settings, get_settings
-from app.db.session import engine
+from app.db.session import get_engine
 
 router = APIRouter(tags=["health"])
 
@@ -26,7 +26,7 @@ async def readyz(settings: Settings = Depends(get_settings)) -> dict[str, object
 
 async def _ping_postgres() -> bool:
     try:
-        async with engine.connect() as conn:
+        async with get_engine().connect() as conn:
             await conn.execute(text("SELECT 1"))
         return True
     except Exception:
