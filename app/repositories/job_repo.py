@@ -44,9 +44,7 @@ class JobRepo:
         return JobStatus(value)
 
     async def update_status(self, job_id: int, status: JobStatus) -> None:
-        await self._session.execute(
-            update(Job).where(Job.id == job_id).values(status=status.value)
-        )
+        await self._session.execute(update(Job).where(Job.id == job_id).values(status=status.value))
         await self._session.commit()
 
     async def set_arq_id(self, job_id: int, arq_job_id: str) -> None:
@@ -56,9 +54,7 @@ class JobRepo:
         await self._session.commit()
 
     async def set_progress(self, job_id: int, progress: dict[str, Any]) -> None:
-        await self._session.execute(
-            update(Job).where(Job.id == job_id).values(progress=progress)
-        )
+        await self._session.execute(update(Job).where(Job.id == job_id).values(progress=progress))
         await self._session.commit()
 
     async def set_error(self, job_id: int, error: dict[str, Any]) -> None:

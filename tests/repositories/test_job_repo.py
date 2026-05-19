@@ -17,9 +17,7 @@ class TestJobRepo:
         assert job.duration_target_seconds == 60
         assert job.progress == {}
 
-    async def test_get_returns_job_with_scenes_eager_loaded(
-        self, clean_db: AsyncSession
-    ) -> None:
+    async def test_get_returns_job_with_scenes_eager_loaded(self, clean_db: AsyncSession) -> None:
         repo = JobRepo(clean_db)
         created = await repo.create(
             user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=30

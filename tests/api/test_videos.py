@@ -81,9 +81,7 @@ class TestGetVideo:
         r = await client.get("/api/videos/9999", headers=auth_headers)
         assert r.status_code == 404
 
-    async def test_returns_job(
-        self, client: AsyncClient, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_returns_job(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
         created = (
             await client.post(
                 "/api/videos",

@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,14 +12,6 @@ from app.schemas.job import CreateJobRequest
 log = get_logger("services.job")
 
 
-class _ArqJobProto(Protocol):
-    job_id: str
-
-
-class _ArqProto(Protocol):
-    async def enqueue_job(self, name: str, *args: object, **kwargs: object) -> _ArqJobProto: ...
-
-
 class JobNotFoundError(Exception):
     pass
 
@@ -29,7 +21,7 @@ class JobNotCancellableError(Exception):
 
 
 class JobService:
-    def __init__(self, *, session: AsyncSession, arq: _ArqProto) -> None:
+    def __init__(self, *, session: AsyncSession, arq: Any) -> None:
         self._repo = JobRepo(session)
         self._arq = arq
 
@@ -41,6 +33,8 @@ class JobService:
             duration_target_seconds=req.duration_target,
         )
         arq_job = await self._arq.enqueue_job("run_video", job.id)
+        if arq_job is None:
+            raise RuntimeError(f"arq.enqueue_job returned None for job {job.id}")
         await self._repo.set_arq_id(job.id, arq_job.job_id)
         refreshed = await self._repo.get(job.id)
         assert refreshed is not None
@@ -58,9 +52,7 @@ class JobService:
         if current is None:
             raise JobNotFoundError(f"job {job_id} not found")
         if current in TERMINAL_JOB_STATUSES:
-            raise JobNotCancellableError(
-                f"job {job_id} is in terminal state {current.value}"
-            )
+            raise JobNotCancellableError(f"job {job_id} is in terminal state {current.value}")
         assert_transition(current, JobStatus.CANCELLED)
         await self._repo.update_status(job_id, JobStatus.CANCELLED)
         log.info("job.cancelled", job_id=job_id, from_status=current.value)

@@ -30,9 +30,7 @@ class TestSceneRepo:
         assert all(s.status == SceneStatus.PENDING.value for s in scenes)
         assert all(s.duration_seconds == Decimal("0.00") for s in scenes)
 
-    async def test_list_by_job_returns_ordered(
-        self, clean_db: AsyncSession, job_id: int
-    ) -> None:
+    async def test_list_by_job_returns_ordered(self, clean_db: AsyncSession, job_id: int) -> None:
         repo = SceneRepo(clean_db)
         await repo.bulk_insert_stubs(job_id=job_id, n=4)
 
@@ -40,9 +38,7 @@ class TestSceneRepo:
 
         assert [s.index for s in scenes] == [0, 1, 2, 3]
 
-    async def test_update_status_persists(
-        self, clean_db: AsyncSession, job_id: int
-    ) -> None:
+    async def test_update_status_persists(self, clean_db: AsyncSession, job_id: int) -> None:
         repo = SceneRepo(clean_db)
         scenes = await repo.bulk_insert_stubs(job_id=job_id, n=2)
 
