@@ -25,9 +25,6 @@ class SceneRepo:
         ]
         self._session.add_all(scenes)
         await self._session.flush()
-        for s in scenes:
-            await self._session.refresh(s)
-        await self._session.commit()
         return scenes
 
     async def list_by_job(self, job_id: int) -> list[Scene]:
@@ -40,4 +37,3 @@ class SceneRepo:
         await self._session.execute(
             update(Scene).where(Scene.id == scene_id).values(status=status.value)
         )
-        await self._session.commit()

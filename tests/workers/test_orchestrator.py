@@ -13,6 +13,7 @@ async def job_id(clean_db: AsyncSession) -> int:
     job = await repo.create(
         user_prompt="hello", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=60
     )
+    await clean_db.commit()
     return job.id
 
 
@@ -40,6 +41,7 @@ class TestRunVideo:
 
     async def test_aborts_when_already_cancelled(self, clean_db: AsyncSession, job_id: int) -> None:
         await JobRepo(clean_db).update_status(job_id, JobStatus.CANCELLED)
+        await clean_db.commit()
 
         await run_video({"_test_no_sleep": True}, job_id)
 
@@ -55,7 +57,11 @@ class TestRunVideo:
     async def test_resume_skips_when_already_done(
         self, clean_db: AsyncSession, job_id: int
     ) -> None:
-        await JobRepo(clean_db).update_status(job_id, JobStatus.DONE)
+        # Bypass state machine to plant a terminal status directly for the test.
+        from sqlalchemy import text
+
+        await clean_db.execute(text("UPDATE jobs SET status='done' WHERE id=:i"), {"i": job_id})
+        await clean_db.commit()
 
         await run_video({"_test_no_sleep": True}, job_id)
         await run_video({"_test_no_sleep": True}, job_id)

@@ -1,3 +1,5 @@
+import hmac
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -12,5 +14,5 @@ async def require_bearer_token(
 ) -> None:
     if creds is None or creds.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    if creds.credentials != settings.app_shared_secret:
+    if not hmac.compare_digest(creds.credentials, settings.app_shared_secret):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)

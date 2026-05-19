@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Info
 - Project Name: algo-reel
-- Project Description: A tool that turns a text prompt into a short (≤3 min) illustrative video. Mostly used for tutorial videos. See TRD for more details. Frontend and Backend stay in the same project. Frontend is built with Next.js (CSR), and Backend is built with FastAPI + LLM + Postgres + PydenticAI.
+- Project Description: A tool that turns a text prompt into a short (≤3 min) illustrative video. Mostly used for tutorial videos. See TRD for more details. Frontend and Backend stay in the same project. Frontend is built with Next.js (CSR), this will generate static pages that will be served from FastAPI, and Backend is built with FastAPI + LLM + Postgres + PydenticAI.
 
 ## Coding standard
 
