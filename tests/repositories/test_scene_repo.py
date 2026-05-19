@@ -41,3 +41,26 @@ class TestBulkInsertFromScript:
         assert [s.visual_prompt for s in scenes] == ["vA", "vB", "vC"]
         assert all(s.status == SceneStatus.PENDING.value for s in scenes)
         assert scenes[0].duration_seconds == Decimal("20.00")
+
+
+class TestUpdateStatus:
+    async def test_persists_new_status(self, clean_db) -> None:  # type: ignore[no-untyped-def]
+        job = await JobRepo(clean_db).create(
+            user_prompt="p",
+            renderer=Renderer.MANIM,
+            voice="alloy",
+            duration_target_seconds=60,
+        )
+        await clean_db.commit()
+        repo = SceneRepo(clean_db)
+        await repo.bulk_insert_from_script(job.id, _script())
+        await clean_db.commit()
+        scenes = await repo.list_by_job(job.id)
+
+        await repo.update_status(scenes[1].id, SceneStatus.DONE)
+        await clean_db.commit()
+
+        refetched = await repo.list_by_job(job.id)
+        assert refetched[0].status == SceneStatus.PENDING.value
+        assert refetched[1].status == SceneStatus.DONE.value
+        assert refetched[2].status == SceneStatus.PENDING.value

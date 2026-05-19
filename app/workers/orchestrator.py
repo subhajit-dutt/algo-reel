@@ -106,6 +106,10 @@ async def _execute(
         await job_repo.set_script(job_id, result.script.model_dump(mode="json"))
         await job_repo.add_cost(job_id, result.cost_usd)
         await scene_repo.bulk_insert_from_script(job_id, result.script)
+        # Commit script + cost + scenes before attempting the transition. If the
+        # transition is rejected (user cancelled mid-LLM-call), the LLM spend is
+        # still recorded — script generation cost real tokens regardless of fate.
+        await session.commit()
         await _transition(job_repo, publisher, job_id, JobStatus.SCRIPTING, JobStatus.SCRIPT_READY)
         current = JobStatus.SCRIPT_READY
 
