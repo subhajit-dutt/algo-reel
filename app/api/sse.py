@@ -42,6 +42,8 @@ async def stream_events(
         ts=datetime.now(tz=UTC),
     )
 
+    terminal_values = {s.value for s in TERMINAL_JOB_STATUSES}
+
     async def _gen() -> AsyncIterator[dict[str, str]]:
         yield {"event": "snapshot", "data": snapshot.model_dump_json()}
         if snapshot_status in TERMINAL_JOB_STATUSES:
@@ -54,9 +56,9 @@ async def stream_events(
                 if msg["type"] != "message":
                     continue
                 data = msg["data"]
-                yield {"event": "progress", "data": data}
                 parsed = json.loads(data)
-                if parsed.get("status") in {s.value for s in TERMINAL_JOB_STATUSES}:
+                yield {"event": parsed.get("event", "progress"), "data": data}
+                if parsed.get("status") in terminal_values:
                     return
         finally:
             await pubsub.unsubscribe()

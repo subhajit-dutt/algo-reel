@@ -48,13 +48,16 @@ class JobService:
         return job
 
     async def cancel_job(self, job_id: int) -> Job:
-        current = await self._repo.get_status(job_id)
-        if current is None:
-            raise JobNotFoundError(f"job {job_id} not found")
-        if current in TERMINAL_JOB_STATUSES:
+        non_terminal = frozenset(JobStatus) - TERMINAL_JOB_STATUSES
+        updated = await self._repo.update_status(
+            job_id, JobStatus.CANCELLED, expected_from=non_terminal
+        )
+        if not updated:
+            current = await self._repo.get_status(job_id)
+            if current is None:
+                raise JobNotFoundError(f"job {job_id} not found")
             raise JobNotCancellableError(f"job {job_id} is in terminal state {current.value}")
-        await self._repo.update_status(job_id, JobStatus.CANCELLED)
-        log.info("job.cancelled", job_id=job_id, from_status=current.value)
+        log.info("job.cancelled", job_id=job_id)
         refreshed = await self._repo.get(job_id)
         assert refreshed is not None
         return refreshed

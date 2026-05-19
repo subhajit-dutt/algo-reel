@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import session_scope
 from app.services.job_service import JobService
-from app.services.progress_publisher import ProgressPublisher
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -27,10 +26,6 @@ def get_redis(request: Request) -> Any:
     if client is None:
         raise RuntimeError("redis client not initialised on app.state — check lifespan")
     return client
-
-
-def get_progress_publisher(redis: Any = Depends(get_redis)) -> ProgressPublisher:
-    return ProgressPublisher(redis)
 
 
 async def get_job_service(

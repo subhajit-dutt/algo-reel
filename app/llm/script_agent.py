@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from decimal import Decimal
-from functools import lru_cache
 
 from openai import AsyncOpenAI
 from pydantic_ai import Agent
@@ -21,7 +20,6 @@ class ScriptGenResult:
     model: str
 
 
-@lru_cache(maxsize=1)
 def _build_agent() -> Agent[None, VideoScript]:
     s = get_settings()
     client = AsyncOpenAI(

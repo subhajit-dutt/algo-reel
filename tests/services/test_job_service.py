@@ -74,6 +74,28 @@ class TestJobServiceCancel:
         with pytest.raises(JobNotCancellableError):
             await service.cancel_job(job.id)
 
+    async def test_cancel_does_not_clobber_terminal_status(
+        self, clean_db: AsyncSession
+    ) -> None:
+        """Conditional UPDATE prevents cancel from racing past a terminal transition."""
+        from sqlalchemy import text
+
+        arq = _FakeArqPool()
+        service = JobService(session=clean_db, arq=arq)
+        req = CreateJobRequest(
+            prompt="x", renderer=Renderer.MANIM, duration_target=60, voice="alloy"
+        )
+        job = await service.create_job(req)
+        # Simulate the worker reaching DONE concurrently — bypass state machine.
+        await clean_db.execute(text("UPDATE jobs SET status='done' WHERE id=:i"), {"i": job.id})
+        await clean_db.commit()
+
+        with pytest.raises(JobNotCancellableError):
+            await service.cancel_job(job.id)
+
+        status = await JobRepo(clean_db).get_status(job.id)
+        assert status == JobStatus.DONE  # unchanged
+
 
 class TestJobServiceGet:
     async def test_get_returns_job(self, clean_db: AsyncSession) -> None:

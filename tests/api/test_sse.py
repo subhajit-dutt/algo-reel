@@ -3,7 +3,6 @@ import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
@@ -22,11 +21,6 @@ async def client(clean_db) -> AsyncIterator[AsyncClient]:  # type: ignore[no-unt
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             ac.headers.update({"Authorization": "Bearer test-secret-123"})
             yield ac
-
-
-@pytest.fixture
-def auth_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer test-secret-123"}
 
 
 def _parse_events(chunk: str) -> list[dict[str, object]]:
@@ -119,3 +113,47 @@ class TestSseEvents:
         assert kinds[0] == "snapshot"
         assert "transition" in kinds
         assert kinds[-1] == "done"
+
+    async def test_sse_event_name_matches_payload_event(
+        self, client: AsyncClient, clean_db, redis_client
+    ) -> None:  # type: ignore[no-untyped-def]
+        """SSE 'event:' line must mirror the underlying ProgressEvent.event so that
+        EventSource.addEventListener('done', ...) etc. dispatches correctly."""
+        repo = JobRepo(clean_db)
+        job = await repo.create(
+            user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=60
+        )
+        await clean_db.commit()
+        job_id = job.id
+
+        publisher = ProgressPublisher(redis_client)
+
+        async def _publish() -> None:
+            await asyncio.sleep(0.2)
+            await publisher.publish(
+                ProgressEvent(
+                    event="failed",
+                    job_id=job_id,
+                    status=JobStatus.FAILED,
+                    progress={},
+                    error={"type": "llm_error", "message": "boom"},
+                    ts=datetime.now(tz=UTC),
+                )
+            )
+
+        result: dict[str, str] = {}
+
+        async def _stream() -> None:
+            async with client.stream("GET", f"/api/videos/{job_id}/events") as r:
+                body = ""
+                async for chunk in r.aiter_text():
+                    body += chunk
+                result["body"] = body
+
+        await asyncio.gather(_publish(), _stream())
+        body = result["body"]
+        # SSE wire format: lines like `event: failed\ndata: {...}\n\n`. Check the
+        # event:-line names — not just the JSON-body events.
+        event_lines = [line for line in body.splitlines() if line.startswith("event:")]
+        assert any(line.strip() == "event: snapshot" for line in event_lines)
+        assert any(line.strip() == "event: failed" for line in event_lines)

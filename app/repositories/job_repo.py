@@ -47,11 +47,13 @@ class JobRepo:
         job_id: int,
         status: JobStatus,
         *,
-        expected_from: JobStatus | None = None,
+        expected_from: JobStatus | frozenset[JobStatus] | None = None,
     ) -> bool:
         stmt = update(Job).where(Job.id == job_id).values(status=status.value)
-        if expected_from is not None:
+        if isinstance(expected_from, JobStatus):
             stmt = stmt.where(Job.status == expected_from.value)
+        elif expected_from is not None:
+            stmt = stmt.where(Job.status.in_([s.value for s in expected_from]))
         result = await self._session.execute(stmt)
         rowcount: int = result.rowcount  # type: ignore[attr-defined]
         return rowcount == 1
