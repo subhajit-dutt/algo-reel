@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Scene
 from app.domain.enums import SceneStatus
+from app.domain.script import VideoScript
 
 
 class SceneRepo:
@@ -22,6 +23,22 @@ class SceneRepo:
                 status=SceneStatus.PENDING.value,
             )
             for i in range(n)
+        ]
+        self._session.add_all(scenes)
+        await self._session.flush()
+        return scenes
+
+    async def bulk_insert_from_script(self, job_id: int, script: VideoScript) -> list[Scene]:
+        scenes = [
+            Scene(
+                job_id=job_id,
+                index=s.index,
+                narration=s.narration,
+                visual_prompt=s.visual_prompt,
+                duration_seconds=Decimal(str(s.duration_seconds)).quantize(Decimal("0.01")),
+                status=SceneStatus.PENDING.value,
+            )
+            for s in script.scenes
         ]
         self._session.add_all(scenes)
         await self._session.flush()
