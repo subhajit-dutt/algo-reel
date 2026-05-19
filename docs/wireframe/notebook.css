@@ -1,0 +1,157 @@
+/* Engineer's-notebook aesthetic tokens & helpers */
+:root {
+  --paper: #f3ecd8;
+  --paper-tint: #faf4e0;
+  --paper-warm: #efe6c8;
+  --grid: rgba(40, 70, 110, 0.10);
+  --grid-strong: rgba(40, 70, 110, 0.18);
+  --ink: #1c2230;
+  --ink-2: #3a4458;
+  --ink-soft: #5a647a;
+  --pencil: #8a8474;
+  --red: #b8412c;
+  --red-soft: rgba(184, 65, 44, 0.75);
+  --hl: #f7d36b;       /* highlighter */
+  --mint: #7eb59a;
+  --blue: #5b7fa8;
+  --shadow: rgba(28, 34, 48, 0.95);
+  --serif: "Caveat", "Patrick Hand", cursive;
+  --hand: "Patrick Hand", "Kalam", cursive;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html, body { margin:0; padding:0; background: var(--paper); color: var(--ink); font-family: var(--hand); }
+body { min-height: 100vh; }
+
+/* ── notebook paper bg (used inside artboards) */
+.paper {
+  position: absolute; inset: 0;
+  background-color: var(--paper-tint);
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px),
+    linear-gradient(to right, var(--grid-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-strong) 1px, transparent 1px);
+  background-size: 16px 16px, 16px 16px, 80px 80px, 80px 80px;
+  background-position: 0 0;
+}
+.paper::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 60%, rgba(80,60,30,0.06) 100%);
+  pointer-events: none;
+}
+
+/* margin red line, like a legal pad */
+.paper-margin::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 56px; width: 1px;
+  background: rgba(184, 65, 44, 0.35);
+}
+
+/* ── primitives */
+.frame {
+  position: absolute; inset: 0; padding: 28px 32px 24px 70px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.h-title { font-family: var(--serif); font-weight: 700; font-size: 38px; line-height: 1; color: var(--ink); letter-spacing: 0.5px; }
+.h-sub   { font-family: var(--hand); font-size: 16px; color: var(--ink-soft); }
+.h-tag   { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink-soft); text-transform: uppercase; }
+
+.crumb { font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft); letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* Sketchy box: 2px ink stroke + offset shadow for "stamped" feel */
+.ink-box {
+  border: 2px solid var(--ink);
+  background: rgba(255, 252, 240, 0.55);
+  box-shadow: 3px 3px 0 var(--ink);
+  border-radius: 4px;
+  position: relative;
+}
+.ink-box.tight  { box-shadow: 2px 2px 0 var(--ink); }
+.ink-box.dashed { border-style: dashed; }
+.ink-box.ghost  { background: transparent; box-shadow: none; border-width: 1.5px; border-style: dashed; border-color: var(--ink-2); }
+.ink-box.warm   { background: var(--paper-warm); }
+.ink-box.tint   { background: rgba(247, 211, 107, 0.25); }
+.ink-box.mint   { background: rgba(126, 181, 154, 0.18); border-color: var(--ink); }
+.ink-box.fail   { background: rgba(184, 65, 44, 0.10); border-color: var(--red); box-shadow: 3px 3px 0 var(--red); }
+
+.ink-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--serif); font-size: 18px;
+  border: 2px solid var(--ink); border-radius: 4px;
+  padding: 4px 14px 5px; background: rgba(255, 252, 240, 0.75); color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink); cursor: default;
+  white-space: nowrap;
+}
+.ink-btn.primary { background: var(--ink); color: var(--paper-tint); }
+.ink-btn.red     { background: var(--red); color: #fff; border-color: var(--ink); box-shadow: 2px 2px 0 var(--ink); }
+.ink-btn.ghost   { box-shadow: none; background: transparent; }
+.ink-btn.sm      { font-size: 14px; padding: 2px 10px 3px; box-shadow: 1.5px 1.5px 0 var(--ink); }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  border: 1.5px solid var(--ink); border-radius: 999px;
+  padding: 3px 10px; background: rgba(255,252,240,0.6);
+  white-space: nowrap;
+}
+.pill.fill { background: var(--ink); color: var(--paper-tint); }
+.pill.hl   { background: var(--hl); }
+.pill.mint { background: var(--mint); color: #fff; }
+.pill.red  { background: var(--red); color: #fff; border-color: var(--red); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--hand); font-size: 15px;
+  border: 1.5px solid var(--ink-2); border-radius: 999px;
+  padding: 2px 12px 3px; background: rgba(255,252,240,0.7);
+  white-space: nowrap;
+}
+
+.field {
+  border: 2px solid var(--ink); border-radius: 4px;
+  background: rgba(255,255,255,0.55); padding: 10px 12px;
+  font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px rgba(28,34,48,0.04);
+}
+.field.lg { font-family: var(--hand); font-size: 18px; color: var(--ink); line-height: 1.35; }
+.field.placeholder { color: var(--pencil); font-style: italic; }
+
+/* Tape strip (top of cards) */
+.tape {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%) rotate(-2deg);
+  width: 60px; height: 16px; background: rgba(247, 211, 107, 0.72);
+  border: 1px solid rgba(184,140,40,0.35); box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* hand-drawn underline */
+.underline-sketch { position: relative; display: inline-block; }
+.underline-sketch::after {
+  content: ""; position: absolute; left: -2px; right: -2px; bottom: -3px; height: 6px;
+  background: var(--hl); z-index: -1; transform: skewX(-12deg);
+}
+
+/* arrow text annotation */
+.annot { position: absolute; font-family: var(--serif); color: var(--red); font-size: 18px; line-height: 1.05; }
+.annot.ink { color: var(--ink); }
+.annot.blue { color: var(--blue); }
+
+/* tiny dotted leader */
+.leader { display: inline-block; flex: 1; border-bottom: 1.5px dotted var(--ink-soft); height: 0; transform: translateY(-4px); }
+
+/* scribble placeholder line */
+.scrib { display: block; height: 8px; background: linear-gradient(90deg, var(--ink-soft) 0 70%, transparent 70%) 0/14px 1.5px repeat-x; }
+.scrib.short { width: 60%; }
+.scrib.mid   { width: 80%; }
+
+/* checkbox / radio */
+.cbox { width: 14px; height: 14px; border: 1.5px solid var(--ink); border-radius: 3px; display: inline-block; flex: 0 0 14px; background: rgba(255,252,240,0.5); }
+.cbox.on { background: var(--ink); position: relative; }
+.cbox.on::after { content: "✓"; position: absolute; inset: -3px 0 0 1px; color: var(--paper-tint); font-family: var(--serif); font-size: 14px; }
+
+.radio { width: 14px; height: 14px; border: 1.5px solid var(--ink); border-radius: 999px; display: inline-block; flex: 0 0 14px; background: rgba(255,252,240,0.5); position: relative; }
+.radio.on::after { content: ""; position: absolute; inset: 2.5px; background: var(--ink); border-radius: 999px; }
+
+.row { display: flex; align-items: center; gap: 10px; }
+.col { display: flex; flex-direction: column; }
+.grow { flex: 1 1 auto; min-width: 0; }
