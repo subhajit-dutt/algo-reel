@@ -1,4 +1,4 @@
-.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean
+.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm
 
 install:
 	uv sync
@@ -37,3 +37,6 @@ typecheck:
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov
+
+smoke-llm:
+	ALGOREEL_ALLOW_LIVE_LLM=1 uv run python -m scripts.smoke_llm $(args)
