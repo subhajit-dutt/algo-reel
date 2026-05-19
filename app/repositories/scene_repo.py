@@ -12,22 +12,6 @@ class SceneRepo:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def bulk_insert_stubs(self, *, job_id: int, n: int) -> list[Scene]:
-        scenes = [
-            Scene(
-                job_id=job_id,
-                index=i,
-                narration=f"[stub narration {i}]",
-                visual_prompt=f"[stub visual {i}]",
-                duration_seconds=Decimal("0.00"),
-                status=SceneStatus.PENDING.value,
-            )
-            for i in range(n)
-        ]
-        self._session.add_all(scenes)
-        await self._session.flush()
-        return scenes
-
     async def bulk_insert_from_script(self, job_id: int, script: VideoScript) -> list[Scene]:
         scenes = [
             Scene(
