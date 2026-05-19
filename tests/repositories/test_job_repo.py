@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.enums import JobStatus, Renderer
@@ -81,3 +83,39 @@ class TestJobRepo:
     async def test_get_status_returns_none_when_missing(self, clean_db: AsyncSession) -> None:
         repo = JobRepo(clean_db)
         assert await repo.get_status(9999) is None
+
+
+class TestSetScript:
+    async def test_persists_script_jsonb(self, clean_db) -> None:  # type: ignore[no-untyped-def]
+        repo = JobRepo(clean_db)
+        job = await repo.create(
+            user_prompt="p",
+            renderer=Renderer.MANIM,
+            voice="alloy",
+            duration_target_seconds=60,
+        )
+        await clean_db.commit()
+        payload = {"title": "t", "scenes": [{"index": 0}]}
+        await repo.set_script(job.id, payload)
+        await clean_db.commit()
+        refreshed = await repo.get(job.id)
+        assert refreshed is not None
+        assert refreshed.script == payload
+
+
+class TestAddCost:
+    async def test_adds_cumulatively(self, clean_db) -> None:  # type: ignore[no-untyped-def]
+        repo = JobRepo(clean_db)
+        job = await repo.create(
+            user_prompt="p",
+            renderer=Renderer.MANIM,
+            voice="alloy",
+            duration_target_seconds=60,
+        )
+        await clean_db.commit()
+        await repo.add_cost(job.id, Decimal("0.0123"))
+        await repo.add_cost(job.id, Decimal("0.0077"))
+        await clean_db.commit()
+        refreshed = await repo.get(job.id)
+        assert refreshed is not None
+        assert refreshed.cost_usd == Decimal("0.0200")
