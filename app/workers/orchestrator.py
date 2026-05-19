@@ -34,7 +34,9 @@ async def run_video(ctx: dict[str, Any], job_id: int) -> None:
             return
         await asyncio.sleep(seconds)
 
-    redis = redis_async.from_url(get_settings().redis_url, decode_responses=True)
+    redis = redis_async.from_url(  # type: ignore[no-untyped-call]
+        get_settings().redis_url, decode_responses=True
+    )
     publisher = ProgressPublisher(redis)
     try:
         async with session_scope() as session:
@@ -104,15 +106,11 @@ async def _execute(
         await job_repo.set_script(job_id, result.script.model_dump(mode="json"))
         await job_repo.add_cost(job_id, result.cost_usd)
         await scene_repo.bulk_insert_from_script(job_id, result.script)
-        await _transition(
-            job_repo, publisher, job_id, JobStatus.SCRIPTING, JobStatus.SCRIPT_READY
-        )
+        await _transition(job_repo, publisher, job_id, JobStatus.SCRIPTING, JobStatus.SCRIPT_READY)
         current = JobStatus.SCRIPT_READY
 
     if current == JobStatus.SCRIPT_READY:
-        await _transition(
-            job_repo, publisher, job_id, JobStatus.SCRIPT_READY, JobStatus.RENDERING
-        )
+        await _transition(job_repo, publisher, job_id, JobStatus.SCRIPT_READY, JobStatus.RENDERING)
         current = JobStatus.RENDERING
 
     if current == JobStatus.RENDERING:
@@ -140,9 +138,7 @@ async def _execute(
                     ts=datetime.now(tz=UTC),
                 )
             )
-        await _transition(
-            job_repo, publisher, job_id, JobStatus.RENDERING, JobStatus.COMPOSING
-        )
+        await _transition(job_repo, publisher, job_id, JobStatus.RENDERING, JobStatus.COMPOSING)
         current = JobStatus.COMPOSING
 
     if current == JobStatus.COMPOSING:

@@ -19,7 +19,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     log = get_logger("app")
     log.info("app.start")
     app.state.arq = await create_pool(redis_settings(), default_queue_name=ORCHESTRATOR_QUEUE)
-    app.state.redis = redis_async.from_url(get_settings().redis_url, decode_responses=True)
+    app.state.redis = redis_async.from_url(  # type: ignore[no-untyped-call]
+        get_settings().redis_url, decode_responses=True
+    )
     try:
         yield
     finally:

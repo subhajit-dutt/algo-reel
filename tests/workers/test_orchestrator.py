@@ -25,9 +25,7 @@ def _canned(n: int = 3, total: float = 60.0) -> VideoScript:
         voice="alloy",
         total_duration=total,
         scenes=[
-            DomainScene(
-                index=i, narration=f"n{i}", visual_prompt=f"v{i}", duration_seconds=per
-            )
+            DomainScene(index=i, narration=f"n{i}", visual_prompt=f"v{i}", duration_seconds=per)
             for i in range(n)
         ],
     )
@@ -89,9 +87,7 @@ class TestRunVideo:
     async def test_noop_when_job_missing(self, clean_db: AsyncSession) -> None:
         await run_video({"_test_no_sleep": True}, 9999)
 
-    async def test_budget_violation_marks_failed(
-        self, clean_db: AsyncSession, job_id: int
-    ) -> None:
+    async def test_budget_violation_marks_failed(self, clean_db: AsyncSession, job_id: int) -> None:
         oversized = _canned(n=20, total=60.0)
         with script_agent.override(model=TestModel(custom_output_args=oversized.model_dump())):
             await run_video({"_test_no_sleep": True}, job_id)
