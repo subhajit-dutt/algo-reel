@@ -1,30 +1,23 @@
 from collections.abc import AsyncIterator
 
-from arq import create_pool
-from arq.connections import ArqRedis, RedisSettings
-from fastapi import Depends
+from arq.connections import ArqRedis
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings, get_settings
-from app.db.session import get_session_factory
+from app.db.session import session_scope
 from app.services.job_service import JobService
-from app.workers.arq_settings import ORCHESTRATOR_QUEUE
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    async with get_session_factory()() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+    async with session_scope() as session:
+        yield session
 
 
-async def get_arq(settings: Settings = Depends(get_settings)) -> ArqRedis:
-    return await create_pool(
-        RedisSettings.from_dsn(settings.redis_url),
-        default_queue_name=ORCHESTRATOR_QUEUE,
-    )
+def get_arq(request: Request) -> ArqRedis:
+    pool: ArqRedis | None = getattr(request.app.state, "arq", None)
+    if pool is None:
+        raise RuntimeError("arq pool not initialised on app.state — check lifespan")
+    return pool
 
 
 async def get_job_service(

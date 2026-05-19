@@ -28,8 +28,6 @@ class JobRepo:
         )
         self._session.add(job)
         await self._session.flush()
-        await self._session.refresh(job)
-        await self._session.commit()
         return job
 
     async def get(self, job_id: int) -> Job | None:
@@ -43,20 +41,27 @@ class JobRepo:
             return None
         return JobStatus(value)
 
-    async def update_status(self, job_id: int, status: JobStatus) -> None:
-        await self._session.execute(update(Job).where(Job.id == job_id).values(status=status.value))
-        await self._session.commit()
+    async def update_status(
+        self,
+        job_id: int,
+        status: JobStatus,
+        *,
+        expected_from: JobStatus | None = None,
+    ) -> bool:
+        stmt = update(Job).where(Job.id == job_id).values(status=status.value)
+        if expected_from is not None:
+            stmt = stmt.where(Job.status == expected_from.value)
+        result = await self._session.execute(stmt)
+        rowcount: int = result.rowcount  # type: ignore[attr-defined]
+        return rowcount == 1
 
     async def set_arq_id(self, job_id: int, arq_job_id: str) -> None:
         await self._session.execute(
             update(Job).where(Job.id == job_id).values(arq_job_id=arq_job_id)
         )
-        await self._session.commit()
 
     async def set_progress(self, job_id: int, progress: dict[str, Any]) -> None:
         await self._session.execute(update(Job).where(Job.id == job_id).values(progress=progress))
-        await self._session.commit()
 
     async def set_error(self, job_id: int, error: dict[str, Any]) -> None:
         await self._session.execute(update(Job).where(Job.id == job_id).values(error=error))
-        await self._session.commit()

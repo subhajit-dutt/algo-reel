@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Job
 from app.domain.enums import JobStatus
-from app.domain.state_machine import TERMINAL_JOB_STATUSES, assert_transition
+from app.domain.state_machine import TERMINAL_JOB_STATUSES
 from app.logging import get_logger
 from app.repositories.job_repo import JobRepo
 from app.schemas.job import CreateJobRequest
@@ -22,6 +22,7 @@ class JobNotCancellableError(Exception):
 
 class JobService:
     def __init__(self, *, session: AsyncSession, arq: Any) -> None:
+        self._session = session
         self._repo = JobRepo(session)
         self._arq = arq
 
@@ -36,10 +37,9 @@ class JobService:
         if arq_job is None:
             raise RuntimeError(f"arq.enqueue_job returned None for job {job.id}")
         await self._repo.set_arq_id(job.id, arq_job.job_id)
-        refreshed = await self._repo.get(job.id)
-        assert refreshed is not None
+        await self._session.refresh(job)
         log.info("job.created", job_id=job.id, arq_job_id=arq_job.job_id)
-        return refreshed
+        return job
 
     async def get_job(self, job_id: int) -> Job:
         job = await self._repo.get(job_id)
@@ -53,7 +53,6 @@ class JobService:
             raise JobNotFoundError(f"job {job_id} not found")
         if current in TERMINAL_JOB_STATUSES:
             raise JobNotCancellableError(f"job {job_id} is in terminal state {current.value}")
-        assert_transition(current, JobStatus.CANCELLED)
         await self._repo.update_status(job_id, JobStatus.CANCELLED)
         log.info("job.cancelled", job_id=job_id, from_status=current.value)
         refreshed = await self._repo.get(job_id)
