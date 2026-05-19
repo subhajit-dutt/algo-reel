@@ -2,9 +2,9 @@ from decimal import Decimal
 
 import pytest
 from pydantic_ai import models
-from pydantic_ai.models.test import TestModel
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.test import TestModel
 from pydantic_ai.settings import ModelSettings
 
 from app.domain.enums import Renderer
@@ -22,7 +22,9 @@ def _canned_script(n: int = 4, total: float = 60.0) -> VideoScript:
         voice="alloy",
         total_duration=total,
         scenes=[
-            Scene(index=i, narration=f"step {i}", visual_prompt=f"diagram {i}", duration_seconds=per)
+            Scene(
+                index=i, narration=f"step {i}", visual_prompt=f"diagram {i}", duration_seconds=per
+            )
             for i in range(n)
         ],
     )
@@ -73,7 +75,5 @@ class TestGenerateScript:
         assert "manim" in captured["last_user"].lower()
 
     async def test_rejects_when_live_calls_blocked(self) -> None:
-        with pytest.raises(Exception):
-            await generate_script(
-                prompt="x", renderer=Renderer.MANIM, duration_target_seconds=60
-            )
+        with pytest.raises(RuntimeError):
+            await generate_script(prompt="x", renderer=Renderer.MANIM, duration_target_seconds=60)

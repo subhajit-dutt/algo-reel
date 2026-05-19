@@ -68,9 +68,7 @@ class JobRepo:
         await self._session.execute(update(Job).where(Job.id == job_id).values(error=error))
 
     async def set_script(self, job_id: int, script: dict[str, Any]) -> None:
-        await self._session.execute(
-            update(Job).where(Job.id == job_id).values(script=script)
-        )
+        await self._session.execute(update(Job).where(Job.id == job_id).values(script=script))
 
     async def add_cost(self, job_id: int, delta: Decimal) -> None:
         await self._session.execute(

@@ -51,9 +51,7 @@ class TestSseEvents:
                 r = await ac.get("/api/videos/1/events")
                 assert r.status_code == 401
 
-    async def test_snapshot_then_close_when_terminal(
-        self, client: AsyncClient, clean_db
-    ) -> None:  # type: ignore[no-untyped-def]
+    async def test_snapshot_then_close_when_terminal(self, client: AsyncClient, clean_db) -> None:  # type: ignore[no-untyped-def]
         repo = JobRepo(clean_db)
         job = await repo.create(
             user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=60
