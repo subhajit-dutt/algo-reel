@@ -1,4 +1,3 @@
-import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -12,13 +11,6 @@ from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="session")
