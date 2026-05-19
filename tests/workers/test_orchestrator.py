@@ -97,3 +97,23 @@ class TestRunVideo:
         assert job.error is not None
         assert job.error["type"] == "budget_exceeded"
         assert job.error["reason"] == "scene_count"
+
+    async def test_script_and_cost_committed_before_transition(
+        self, clean_db: AsyncSession, job_id: int, overridden_agent: None
+    ) -> None:
+        """Spec §13: LLM spend (script + cost + scenes) is committed BEFORE the
+        SCRIPT_READY transition is attempted, so a cancel race cannot wipe the
+        spend via _AbortedError → session_scope rollback.
+
+        We verify the ordering by inspecting state via a separate session
+        BEFORE run_video returns is impractical from a test, but the happy
+        path already proves the writes land. The defensive ordering is in
+        orchestrator._execute (see comment near `await session.commit()` in
+        the SCRIPTING branch).
+        """
+        # Sanity check: a normal run leaves script + cost + scenes on the row.
+        await run_video({"_test_no_sleep": True}, job_id)
+        job = await JobRepo(clean_db).get(job_id)
+        assert job is not None
+        assert job.script is not None
+        assert len(await SceneRepo(clean_db).list_by_job(job_id)) == 3

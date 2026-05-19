@@ -1,10 +1,8 @@
 import asyncio
-from datetime import UTC, datetime
 from typing import Any
 
-import redis.asyncio as redis_async
-
 from app.config import get_settings
+from app.db.redis import create_redis_client
 from app.db.session import session_scope
 from app.domain.enums import JobStatus, Renderer, SceneStatus
 from app.domain.state_machine import TERMINAL_JOB_STATUSES, assert_transition
@@ -34,9 +32,7 @@ async def run_video(ctx: dict[str, Any], job_id: int) -> None:
             return
         await asyncio.sleep(seconds)
 
-    redis = redis_async.from_url(  # type: ignore[no-untyped-call]
-        get_settings().redis_url, decode_responses=True
-    )
+    redis = create_redis_client()
     publisher = ProgressPublisher(redis)
     try:
         async with session_scope() as session:
@@ -70,46 +66,51 @@ async def _execute(
         current = JobStatus.SCRIPTING
 
     if current == JobStatus.SCRIPTING:
-        try:
-            result = await generate_script(
-                prompt=job.user_prompt,
-                renderer=Renderer(job.renderer),
-                duration_target_seconds=job.duration_target_seconds,
-            )
-            s = get_settings()
-            enforce_budget(
-                result.script,
-                cost_usd=result.cost_usd,
-                target_seconds=job.duration_target_seconds,
-                max_cost=s.max_script_cost_usd,
-                max_scenes=s.max_scenes_per_video,
-            )
-        except BudgetExceededError as e:
-            await _fail(
-                job_repo,
-                publisher,
-                job_id,
-                JobStatus.SCRIPTING,
-                {"type": "budget_exceeded", "reason": e.reason, "value": str(e.value)},
-            )
-            return
-        except Exception as e:
-            await _fail(
-                job_repo,
-                publisher,
-                job_id,
-                JobStatus.SCRIPTING,
-                {"type": "llm_error", "message": str(e)},
-            )
-            return
-
-        await job_repo.set_script(job_id, result.script.model_dump(mode="json"))
-        await job_repo.add_cost(job_id, result.cost_usd)
-        await scene_repo.bulk_insert_from_script(job_id, result.script)
-        # Commit script + cost + scenes before attempting the transition. If the
-        # transition is rejected (user cancelled mid-LLM-call), the LLM spend is
-        # still recorded — script generation cost real tokens regardless of fate.
-        await session.commit()
+        # Resume guard: a prior attempt already persisted the script + cost (the
+        # intermediate commit at the bottom of this block succeeded but the
+        # SCRIPT_READY transition didn't). Skip the LLM call so Arq's max_tries
+        # retry doesn't bill the user a second time.
+        if job.script is None:
+            try:
+                result = await generate_script(
+                    prompt=job.user_prompt,
+                    renderer=Renderer(job.renderer),
+                    duration_target_seconds=job.duration_target_seconds,
+                )
+                s = get_settings()
+                enforce_budget(
+                    result.script,
+                    cost_usd=result.cost_usd,
+                    target_seconds=job.duration_target_seconds,
+                    max_cost=s.max_script_cost_usd,
+                    max_scenes=s.max_scenes_per_video,
+                )
+                await job_repo.set_script(job_id, result.script.model_dump(mode="json"))
+                await job_repo.add_cost(job_id, result.cost_usd)
+                await scene_repo.bulk_insert_from_script(job_id, result.script)
+                # Commit script + cost + scenes before attempting the transition.
+                # If the transition is rejected (user cancelled mid-LLM-call), the
+                # LLM spend is still recorded — script generation cost real tokens
+                # regardless of fate. Spec §13.
+                await session.commit()
+            except BudgetExceededError as e:
+                await _fail(
+                    job_repo,
+                    publisher,
+                    job_id,
+                    JobStatus.SCRIPTING,
+                    {"type": "budget_exceeded", "reason": e.reason, "value": str(e.value)},
+                )
+                return
+            except Exception as e:
+                await _fail(
+                    job_repo,
+                    publisher,
+                    job_id,
+                    JobStatus.SCRIPTING,
+                    {"type": "llm_error", "message": str(e)},
+                )
+                return
         await _transition(job_repo, publisher, job_id, JobStatus.SCRIPTING, JobStatus.SCRIPT_READY)
         current = JobStatus.SCRIPT_READY
 
@@ -132,6 +133,8 @@ async def _execute(
                 "stage": "stub_render",
             }
             await job_repo.set_progress(job_id, progress)
+            # Commit per-scene so a cancel mid-loop doesn't roll back finished work.
+            await session.commit()
             await publisher.publish(
                 ProgressEvent(
                     event="progress",
@@ -139,7 +142,6 @@ async def _execute(
                     status=JobStatus.RENDERING,
                     progress=progress,
                     scene_id=scene.id,
-                    ts=datetime.now(tz=UTC),
                 )
             )
         await _transition(job_repo, publisher, job_id, JobStatus.RENDERING, JobStatus.COMPOSING)
@@ -178,7 +180,6 @@ async def _transition(
             job_id=job_id,
             status=dst,
             progress={},
-            ts=datetime.now(tz=UTC),
         )
     )
 
@@ -203,7 +204,6 @@ async def _fail(
             status=JobStatus.FAILED,
             progress={},
             error=error,
-            ts=datetime.now(tz=UTC),
         )
     )
 

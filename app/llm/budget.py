@@ -21,6 +21,8 @@ def enforce_budget(
     max_cost: Decimal,
     max_scenes: int,
 ) -> None:
+    if target_seconds <= 0:
+        raise ValueError(f"target_seconds must be positive, got {target_seconds}")
     if cost_usd > max_cost:
         raise BudgetExceededError("script_cost", cost_usd)
     n = len(script.scenes)
