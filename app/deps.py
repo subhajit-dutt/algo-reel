@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.db.session import get_session_factory
 from app.services.job_service import JobService
+from app.workers.arq_settings import ORCHESTRATOR_QUEUE
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -20,7 +21,10 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 
 async def get_arq(settings: Settings = Depends(get_settings)) -> ArqRedis:
-    return await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    return await create_pool(
+        RedisSettings.from_dsn(settings.redis_url),
+        default_queue_name=ORCHESTRATOR_QUEUE,
+    )
 
 
 async def get_job_service(
