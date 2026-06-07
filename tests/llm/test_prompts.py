@@ -58,3 +58,5 @@ class TestManimFewShot:
         assert len(script.scenes) >= 3
         assert all(len(scene.narration) <= 300 for scene in script.scenes)
         assert all(scene.duration_seconds > 0 for scene in script.scenes)
+        total = sum(scene.duration_seconds for scene in script.scenes)
+        assert abs(total - script.total_duration) <= 0.2 * script.total_duration
