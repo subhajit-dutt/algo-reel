@@ -17,7 +17,9 @@ from app.tts.synthesizer import synthesize_scene
 
 async def main() -> int:
     if os.environ.get("ALGOREEL_ALLOW_LIVE_TTS") != "1":
-        print("Refusing to run: set ALGOREEL_ALLOW_LIVE_TTS=1 to hit the live API.", file=sys.stderr)
+        print(
+            "Refusing to run: set ALGOREEL_ALLOW_LIVE_TTS=1 to hit the live API.", file=sys.stderr
+        )
         return 1
     narration = " ".join(sys.argv[1:]) or "Hello from algo-reel."
     s = get_settings()

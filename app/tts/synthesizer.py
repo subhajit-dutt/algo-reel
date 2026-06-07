@@ -20,9 +20,7 @@ class SynthesisResult:
 async def synthesize_scene(*, narration: str, voice: str, client: TTSClient) -> SynthesisResult:
     """Synthesize one scene's narration. Raises on TTS failure after the client's retries."""
     s = get_settings()
-    audio = await client.synthesize(
-        text=narration, voice=voice, instructions=s.tts_instructions
-    )
+    audio = await client.synthesize(text=narration, voice=voice, instructions=s.tts_instructions)
     duration = wav_duration_seconds(audio)
     cost = compute_tts_cost(s.tts_model, audio_seconds=duration)
     return SynthesisResult(

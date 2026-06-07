@@ -208,9 +208,7 @@ class TestSseEvents:
         between the script_ready transition and the rendering transition."""
         models.ALLOW_MODEL_REQUESTS = False
         monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: _FakeTTSClient())
-        monkeypatch.setattr(
-            "app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path)
-        )
+        monkeypatch.setattr("app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path))
 
         repo = JobRepo(clean_db)
         job = await repo.create(
@@ -232,7 +230,9 @@ class TestSseEvents:
                     body += chunk
                 result["body"] = body
 
-        with script_agent.override(model=TestModel(custom_output_args=_canned_script().model_dump())):
+        with script_agent.override(
+            model=TestModel(custom_output_args=_canned_script().model_dump())
+        ):
             await asyncio.gather(
                 _stream(),
                 run_video({"_test_no_sleep": True}, job_id),
@@ -241,7 +241,8 @@ class TestSseEvents:
         collected = _parse_events(result["body"])
 
         tts_events = [
-            e for e in collected
+            e
+            for e in collected
             if e.get("event") == "progress" and e.get("progress", {}).get("stage") == "tts"  # type: ignore[union-attr]
         ]
         assert tts_events, "expected at least one stage=tts progress event"
