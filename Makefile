@@ -1,4 +1,4 @@
-.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm
+.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm smoke-tts frontend-install frontend-build
 
 install:
 	uv sync
@@ -40,3 +40,12 @@ clean:
 
 smoke-llm:
 	ALGOREEL_ALLOW_LIVE_LLM=1 uv run python -m scripts.smoke_llm $(args)
+
+smoke-tts:
+	ALGOREEL_ALLOW_LIVE_TTS=1 uv run python -m scripts.smoke_tts $(args)
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-build:
+	cd frontend && npm run build

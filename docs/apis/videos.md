@@ -162,6 +162,9 @@ event: transition
 data: {"event":"transition","job_id":42,"status":"scripting","progress":{},"scene_id":null,"error":null,"ts":"2026-05-19T18:00:01Z"}
 
 event: progress
+data: {"event":"progress","job_id":42,"status":"script_ready","progress":{"current_scene":1,"total":3,"stage":"tts"},"scene_id":101,"error":null,"ts":"2026-05-19T18:00:04Z"}
+
+event: progress
 data: {"event":"progress","job_id":42,"status":"rendering","progress":{"current_scene":1,"total":3,"stage":"stub_render"},"scene_id":101,"error":null,"ts":"2026-05-19T18:00:08Z"}
 
 event: done
@@ -169,6 +172,8 @@ data: {"event":"done","job_id":42,"status":"done","progress":{},"scene_id":null,
 ```
 
 The SSE `event:` line mirrors the JSON payload's `event` field; clients can dispatch via `EventSource.addEventListener("done", …)`. Heartbeat ping every 15 s.
+
+The `progress.stage` field is one of `"tts"` (per-scene narration synthesis, emitted while `status` is `script_ready`) or `"stub_render"` (the M1/M2 render placeholder; becomes real renderer stages in M4).
 
 **Errors**
 
