@@ -1,16 +1,27 @@
 import asyncio
+import io
 import json
+import wave
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from pydantic_ai import models
+from pydantic_ai.models.test import TestModel
 
 from app.domain.enums import JobStatus, Renderer
+from app.domain.script import Scene as DomainScene
+from app.domain.script import VideoScript
+from app.llm.script_agent import script_agent
 from app.main import create_app
 from app.repositories.job_repo import JobRepo
 from app.schemas.event import ProgressEvent
 from app.services.progress_publisher import ProgressPublisher
+from app.storage import LocalStorage
+from app.workers.orchestrator import run_video
 
 
 @pytest_asyncio.fixture
@@ -30,6 +41,34 @@ def _parse_events(chunk: str) -> list[dict[str, object]]:
             if line.startswith("data:"):
                 events.append(json.loads(line[len("data:") :].strip()))
     return events
+
+
+def _canned_script(n: int = 3, total: float = 60.0) -> VideoScript:
+    per = total / n
+    return VideoScript(
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=total,
+        scenes=[
+            DomainScene(index=i, narration=f"n{i}", visual_prompt=f"v{i}", duration_seconds=per)
+            for i in range(n)
+        ],
+    )
+
+
+class _FakeTTSClient:
+    def __init__(self, seconds: float = 5.0) -> None:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b"\x00\x00" * int(seconds * 24000))
+        self._data = buf.getvalue()
+
+    async def synthesize(self, *, text: str, voice: str, instructions: str) -> bytes:
+        return self._data
 
 
 class TestSseEvents:
@@ -157,3 +196,53 @@ class TestSseEvents:
         event_lines = [line for line in body.splitlines() if line.startswith("event:")]
         assert any(line.strip() == "event: snapshot" for line in event_lines)
         assert any(line.strip() == "event: failed" for line in event_lines)
+
+    async def test_e2e_pipeline_emits_tts_progress_events(
+        self,
+        client: AsyncClient,
+        clean_db,  # type: ignore[no-untyped-def]
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Full pipeline run emits stage=tts progress events on the SSE stream
+        between the script_ready transition and the rendering transition."""
+        models.ALLOW_MODEL_REQUESTS = False
+        monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: _FakeTTSClient())
+        monkeypatch.setattr(
+            "app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path)
+        )
+
+        repo = JobRepo(clean_db)
+        job = await repo.create(
+            user_prompt="hello",
+            renderer=Renderer.MANIM,
+            voice="alloy",
+            duration_target_seconds=60,
+        )
+        await clean_db.commit()
+        job_id = job.id
+
+        result: dict[str, str] = {}
+
+        async def _stream() -> None:
+            async with client.stream("GET", f"/api/videos/{job_id}/events") as r:
+                assert r.status_code == 200
+                body = ""
+                async for chunk in r.aiter_text():
+                    body += chunk
+                result["body"] = body
+
+        with script_agent.override(model=TestModel(custom_output_args=_canned_script().model_dump())):
+            await asyncio.gather(
+                _stream(),
+                run_video({"_test_no_sleep": True}, job_id),
+            )
+
+        collected = _parse_events(result["body"])
+
+        tts_events = [
+            e for e in collected
+            if e.get("event") == "progress" and e.get("progress", {}).get("stage") == "tts"  # type: ignore[union-attr]
+        ]
+        assert tts_events, "expected at least one stage=tts progress event"
+        assert all(e["status"] == "script_ready" for e in tts_events)
