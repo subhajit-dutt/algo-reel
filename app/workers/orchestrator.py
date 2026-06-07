@@ -1,18 +1,23 @@
 import asyncio
+from decimal import Decimal
 from typing import Any
 
 from app.config import get_settings
 from app.db.redis import create_redis_client
 from app.db.session import session_scope
-from app.domain.enums import JobStatus, Renderer, SceneStatus
+from app.domain.enums import AssetKind, JobStatus, Renderer, SceneStatus
 from app.domain.state_machine import TERMINAL_JOB_STATUSES, assert_transition
 from app.llm.budget import BudgetExceededError, enforce_budget
 from app.llm.script_agent import generate_script
 from app.logging import get_logger
+from app.repositories.asset_repo import AssetRepo
 from app.repositories.job_repo import JobRepo
 from app.repositories.scene_repo import SceneRepo
 from app.schemas.event import ProgressEvent
 from app.services.progress_publisher import ProgressPublisher
+from app.storage import get_storage
+from app.tts.client import get_tts_client
+from app.tts.synthesizer import synthesize_scene
 
 log = get_logger("workers.orchestrator")
 
@@ -22,6 +27,13 @@ _COMPOSING_DELAY_S = 1.0
 
 class _AbortedError(Exception):
     pass
+
+
+class _SceneTTSError(Exception):
+    def __init__(self, scene_index: int, message: str) -> None:
+        super().__init__(message)
+        self.scene_index = scene_index
+        self.message = message
 
 
 async def run_video(ctx: dict[str, Any], job_id: int) -> None:
@@ -115,6 +127,17 @@ async def _execute(
         current = JobStatus.SCRIPT_READY
 
     if current == JobStatus.SCRIPT_READY:
+        try:
+            await _voice_all_scenes(session, job, job_repo, scene_repo, publisher)
+        except _SceneTTSError as e:
+            await _fail(
+                job_repo,
+                publisher,
+                job_id,
+                JobStatus.SCRIPT_READY,
+                {"type": "tts_error", "scene_index": e.scene_index, "message": e.message},
+            )
+            return
         await _transition(job_repo, publisher, job_id, JobStatus.SCRIPT_READY, JobStatus.RENDERING)
         current = JobStatus.RENDERING
 
@@ -152,6 +175,78 @@ async def _execute(
         await _transition(job_repo, publisher, job_id, JobStatus.COMPOSING, JobStatus.DONE)
 
     log.info("orchestrator.completed", job_id=job_id)
+
+
+async def _voice_all_scenes(
+    session: Any,
+    job: Any,
+    job_repo: JobRepo,
+    scene_repo: SceneRepo,
+    publisher: ProgressPublisher,
+) -> None:
+    s = get_settings()
+    asset_repo = AssetRepo(session)
+    storage = get_storage()
+    tts_client = get_tts_client()
+
+    # Cancellation is checked once here; a cancel during the gather lets in-flight
+    # synthesis finish and the batch commit, then the SCRIPT_READY→RENDERING
+    # transition aborts via the conditional UPDATE (spend recorded regardless of
+    # fate — same property as the SCRIPTING block).
+    await _assert_not_terminal(job_repo, job.id)
+
+    scenes = await scene_repo.list_by_job(job.id)
+    # A scene's audio asset row and its set_duration land in the SAME commit below,
+    # so any scene already in `already_voiced` necessarily already has its measured
+    # duration — that's why skipped scenes are not re-voiced or re-dured here.
+    already_voiced = await asset_repo.audio_scene_ids(job.id)
+    pending = [scene for scene in scenes if scene.id not in already_voiced]
+
+    voice = job.voice or s.tts_voice_default
+    sem = asyncio.Semaphore(s.tts_max_concurrency)
+
+    async def _synth_one(scene: Any) -> tuple[Any, Any, Any]:
+        try:
+            async with sem:
+                result = await synthesize_scene(
+                    narration=scene.narration, voice=voice, client=tts_client
+                )
+                stored = await storage.put(
+                    f"audio/{job.id}/{scene.id}.wav", result.audio_bytes, result.content_type
+                )
+        # Any synth OR storage failure for a scene becomes a typed tts_error that
+        # fails the whole job (audio is a hard dependency for rendering).
+        except Exception as exc:
+            raise _SceneTTSError(scene.index, str(exc)) from exc
+        return scene, result, stored
+
+    # Concurrency is on the OpenAI calls + file writes only; gather returns plain
+    # values. All DB writes below run sequentially on the single AsyncSession,
+    # which is not safe for concurrent use across tasks.
+    outcomes = await asyncio.gather(*[_synth_one(scene) for scene in pending])
+
+    total_cost = Decimal("0")
+    total = len(scenes)
+    for scene, result, stored in outcomes:
+        await asset_repo.record(
+            job.id, scene.id, AssetKind.AUDIO, stored.key, stored.bytes, result.content_type
+        )
+        await scene_repo.set_duration(scene.id, result.duration_seconds)
+        total_cost += result.cost_usd
+        progress = {"current_scene": scene.index + 1, "total": total, "stage": "tts"}
+        await job_repo.set_progress(job.id, progress)
+        await publisher.publish(
+            ProgressEvent(
+                event="progress",
+                job_id=job.id,
+                status=JobStatus.SCRIPT_READY,
+                progress=progress,
+                scene_id=scene.id,
+            )
+        )
+    if total_cost > 0:
+        await job_repo.add_cost(job.id, total_cost)
+    await session.commit()
 
 
 async def _transition(
