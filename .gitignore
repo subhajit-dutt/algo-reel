@@ -19,6 +19,9 @@ htmlcov/
 .idea/
 .vscode/
 
+# Media
+.media/
+
 # Builds
 dist/
 build/
