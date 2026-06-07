@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.domain.enums import Renderer, SceneStatus
 from app.domain.script import Scene as DomainScene
 from app.domain.script import VideoScript
@@ -64,3 +66,32 @@ class TestUpdateStatus:
         assert refetched[0].status == SceneStatus.PENDING.value
         assert refetched[1].status == SceneStatus.DONE.value
         assert refetched[2].status == SceneStatus.PENDING.value
+
+
+async def test_set_duration_overwrites_placeholder(clean_db: AsyncSession) -> None:
+    from decimal import Decimal
+
+    from app.domain.enums import Renderer
+    from app.domain.script import Scene as DomainScene
+    from app.domain.script import VideoScript
+    from app.repositories.job_repo import JobRepo
+    from app.repositories.scene_repo import SceneRepo
+
+    job = await JobRepo(clean_db).create(
+        user_prompt="p", renderer=Renderer.MANIM, voice="coral", duration_target_seconds=30
+    )
+    await clean_db.flush()
+    script = VideoScript(
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="coral",
+        total_duration=10.0,
+        scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=10.0)],
+    )
+    repo = SceneRepo(clean_db)
+    scenes = await repo.bulk_insert_from_script(job.id, script)
+    await repo.set_duration(scenes[0].id, Decimal("4.25"))
+    await clean_db.commit()
+
+    refreshed = await repo.list_by_job(job.id)
+    assert refreshed[0].duration_seconds == Decimal("4.25")
