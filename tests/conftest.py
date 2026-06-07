@@ -48,6 +48,7 @@ def _env(postgres_url: str, redis_url: str) -> Iterator[None]:
     os.environ["LLM_TIMEOUT_SECONDS"] = "60"
     os.environ["MAX_SCRIPT_COST_USD"] = "0.10"
     os.environ["MAX_SCENES_PER_VIDEO"] = "12"
+    os.environ["OPENAI_API_KEY"] = "test-openai-key"
     from app.config import get_settings
     from app.db.session import get_engine, get_session_factory
 
