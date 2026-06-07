@@ -191,9 +191,7 @@ class TestRunVideo:
     ) -> None:
         fake = FakeTTSClient(seconds=5.0)
         monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: fake)
-        monkeypatch.setattr(
-            "app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path)
-        )
+        monkeypatch.setattr("app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path))
 
         await run_video({"_test_no_sleep": True}, job_id)
 
@@ -224,9 +222,7 @@ class TestRunVideo:
     ) -> None:
         fake = FakeTTSClient(seconds=5.0, fail_on_index=1)
         monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: fake)
-        monkeypatch.setattr(
-            "app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path)
-        )
+        monkeypatch.setattr("app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path))
 
         await run_video({"_test_no_sleep": True}, job_id)
 
@@ -266,9 +262,7 @@ class TestRunVideo:
 
         fake = FakeTTSClient(seconds=5.0)
         monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: fake)
-        monkeypatch.setattr(
-            "app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path)
-        )
+        monkeypatch.setattr("app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path))
 
         await run_video({"_test_no_sleep": True}, job_id)
 
