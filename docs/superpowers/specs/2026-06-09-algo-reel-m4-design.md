@@ -39,6 +39,8 @@ This milestone is "done" when:
 - `RenderRepo` (`app/repositories/render_repo.py`) — first writes to the `renders` audit table (`start_attempt`, `mark_succeeded`, `mark_failed`).
 - `SceneRepo.set_output_url(...)` and a `set_status` that already exists (`update_status`) — populate `scenes.output_url`.
 - `JobRepo.set_output_url(...)` — populate `jobs.output_url` at compose.
+- `SceneRepo.get(scene_id)` — single-scene read. `render_scene` needs one scene's narration/duration/status; today `SceneRepo` exposes only `list_by_job` (no by-id getter).
+- `AssetRepo.storage_key_for(scene_id, kind)` — resolve an asset's `storage_key` so the read path can `storage.get(key)`. Today `AssetRepo` exposes only `record` + `audio_scene_ids` (no key getter).
 - `Storage.get(key) -> bytes` added to the `Storage` Protocol + `LocalStorage` — the read path the render/compose pools use to materialize the audio and scene MP4s into the container input mount (M3 only needed `put`/`url`). Backend-agnostic so it survives the R2 swap.
 - Orchestrator rewiring: `RENDERING` block fans out + awaits real render jobs; `COMPOSING` block enqueues + awaits the compose job. A render-queue Arq pool (`create_pool`) is opened for enqueue/await.
 - A second Arq worker entrypoint `RenderWorkerSettings` (queue `render_pool`, `max_jobs=1`).
@@ -76,7 +78,8 @@ app/
 │   └── orchestrator.py          # RENDERING + COMPOSING blocks rewired (stubs removed)
 ├── repositories/
 │   ├── render_repo.py           # NEW — RenderRepo (renders audit writes)
-│   ├── scene_repo.py            # + set_output_url(...)
+│   ├── scene_repo.py            # + set_output_url(...), get(scene_id)
+│   ├── asset_repo.py            # + storage_key_for(scene_id, kind)
 │   └── job_repo.py              # + set_output_url(...)
 └── storage/
     ├── base.py                  # + Storage.get(key) -> bytes
@@ -191,20 +194,20 @@ The compose path does not implement `SceneRenderer`; `compose_video` builds an `
 
 ## 6. Render-pool jobs (`app/workers/render.py`)
 
-**`render_scene(ctx, scene_id)`** — render pool, `max_jobs=1`:
+**`render_scene(ctx, scene_id, scene_total)`** — render pool, `max_jobs=1`. (`scene_total` is passed by the orchestrator so the worker can build the progress dict without an extra count query.)
 
-1. Fresh `session_scope()`, storage, `get_renderer()`.
-2. Load scene. **Idempotency:** `if scene.status == done: return` (resume / double-enqueue guard).
-3. Resolve the scene's `AssetKind.AUDIO` asset and `storage.get(key)` its bytes into a per-job temp `input_dir` as `audio.wav`. (`output_dir` is a sibling temp dir.)
-4. `scene_repo.update_status(scene_id, RENDERING)`; `RenderRepo.start_attempt(scene_id, attempt=1)`; commit.
+1. Fresh `session_scope()`, `get_storage()`, `get_renderer()`, and a Redis client (`create_redis_client()` → `ProgressPublisher`) for progress.
+2. `scene = await SceneRepo(session).get(scene_id)`. **Idempotency:** `if scene.status == done: return` (resume / double-enqueue guard).
+3. `key = await AssetRepo(session).storage_key_for(scene_id, AssetKind.AUDIO)`; `storage.get(key)` → write bytes into a per-job temp `input_dir` as `audio.wav`. (`output_dir` is a sibling temp dir.)
+4. `SceneRepo.update_status(scene_id, RENDERING)`; `RenderRepo.start_attempt(scene_id, attempt=1)`; commit. Publish a `progress` event `{current_scene: scene.index + 1, total: scene_total, stage: "render"}` with `status=rendering`, `scene_id` — this is the real-time per-scene update on the SSE stream (the orchestrator's `gather` only *awaits*; it does not emit per-scene progress).
 5. `result = await renderer.render(...)`. If `result.exit_code != 0` or `result.timed_out` or `/out/scene.mp4` missing/empty → raise `RenderError(scene.index, result.stderr)`.
-6. Read `/out/scene.mp4`; `storage.put("video/{job}/{scene}.mp4", bytes, "video/mp4")` → `AssetRepo.record(..., SCENE_MP4)`; `scene_repo.set_output_url(scene_id, storage.url(key))`; `update_status(scene_id, DONE)`; `RenderRepo.mark_succeeded(render_id, duration_ms)`; commit.
+6. Read `/out/scene.mp4`; `storage.put("video/{job}/{scene}.mp4", bytes, "video/mp4")` → `AssetRepo.record(..., SCENE_MP4)`; `SceneRepo.set_output_url(scene_id, storage.url(key))`; `update_status(scene_id, DONE)`; `RenderRepo.mark_succeeded(render_id, duration_ms)`; commit.
 7. On `RenderError`: `RenderRepo.mark_failed(render_id, stderr)`; `update_status(scene_id, FAILED)`; commit; **re-raise** so Arq infra-retry (`max_tries`) applies and, on final failure, the exception is delivered to the orchestrator via `job.result()`.
 
 **`compose_video(ctx, job_id)`** — render pool, trusted:
 
-1. Fresh session, storage. **Idempotency:** `if job.output_url is not None: return`.
-2. Load scenes ordered by `index`; `storage.get` each scene MP4 into `input_dir`; write `list.txt` (concat demuxer manifest, in index order).
+1. Fresh `session_scope()`, `get_storage()`, and a Redis client for progress. **Idempotency:** `if job.output_url is not None: return`.
+2. Publish a `progress` event `{stage: "compose"}` with `status=composing`. Load scenes ordered by `index`; for each, resolve its `SCENE_MP4` key via `AssetRepo.storage_key_for(scene_id, SCENE_MP4)` and `storage.get` it into `input_dir`; write `list.txt` (concat demuxer manifest, in index order).
 3. `run_sandboxed(ffmpeg concat)` → `/out/final.mp4`; non-zero/empty → raise a `RenderError`-style failure surfaced to the orchestrator as `compose_error`.
 4. `storage.put("video/{job}/final.mp4", bytes, "video/mp4")` → `AssetRepo.record(..., FINAL_MP4)`; `JobRepo.set_output_url(job_id, storage.url(key))`; commit.
 
@@ -214,23 +217,22 @@ The compose path does not implement `SceneRenderer`; `compose_video` builds an `
 
 ## 7. Orchestrator rewiring + coordination (Approach A)
 
-The orchestrator opens a render-queue pool once per run via `create_pool(redis_settings())` (Arq's `ArqRedis`), used to enqueue onto `render_pool` and read results.
+The orchestrator enqueues onto `render_pool` and reads results via the `ArqRedis` pool **Arq already provides in `ctx["redis"]`** — the same handle the API uses to enqueue `run_video` ([job_service.py:39](../../../app/services/job_service.py)). No per-job `create_pool` (which would leak connections and offer no test seam); `pool = ctx["redis"]`. The orchestrator's existing per-run plain Redis client (`create_redis_client()`) stays for SSE pub/sub — only `ArqRedis` exposes `enqueue_job`. This `ctx["redis"]` handle is also the test injection seam (§11): tests pass a fake pool in the ctx dict.
 
 **`RENDERING` block** (replaces [orchestrator.py:144-169](../../../app/workers/orchestrator.py)):
-- Re-read scenes; for each scene whose status is not `done`, `await pool.enqueue_job("render_scene", scene.id, _queue_name=RENDER_QUEUE)` → collect `Job` handles.
-- `await asyncio.gather(*[j.result(timeout=render_result_timeout_seconds) for j in handles])`.
-- After each scene completes (re-read its row), emit a `progress` event with `stage="render"`, `current_scene`, `total`, and `set_progress` on the job; commit per scene (cancel-safe, mirrors the existing per-scene commit).
-- If any `j.result()` raises (final infra failure or a `render_error`), `_fail(... {"type": "render_error", "scene_index": <if known>, "message": ...})` and return.
+- `pool = ctx["redis"]`. Re-read scenes (`scene_total = len(scenes)`); for each scene whose status is not `done`, `await pool.enqueue_job("render_scene", scene.id, scene_total, _queue_name=RENDER_QUEUE)` → collect `Job` handles.
+- `await asyncio.gather(*[j.result(timeout=render_result_timeout_seconds) for j in handles])`. This **only awaits completion** — per-scene `stage="render"` progress is published by the render worker itself (§6), so there is no per-completion callback to fake here (and `gather`, which resolves all-at-once, could not provide one).
+- The block **no longer touches scene status** — `render_scene` now owns the scene lifecycle; the stub's `scene_repo.update_status(...)` calls are removed.
+- If any `j.result()` raises (final infra failure, or a `render_error` re-raised from the worker), `_fail(... {"type": "render_error", "scene_index": <from the exception if available>, "message": ...})` and return.
 - Then `_transition(RENDERING → COMPOSING)`.
 
 **`COMPOSING` block** (replaces [orchestrator.py:173-175](../../../app/workers/orchestrator.py)):
-- `handle = await pool.enqueue_job("compose_video", job_id, _queue_name=RENDER_QUEUE)`; `await handle.result(timeout=compose_result_timeout_seconds)`.
-- Emit a `progress` event with `stage="compose"`.
+- `handle = await pool.enqueue_job("compose_video", job_id, _queue_name=RENDER_QUEUE)`; `await handle.result(timeout=compose_result_timeout_seconds)`. `compose_video` publishes its own `stage="compose"` progress event (§6).
 - On failure → `_fail(... {"type": "compose_error", "message": ...})`. Else `_transition(COMPOSING → DONE)`. The existing `_transition` already publishes the terminal `done` event; the frontend re-fetches the snapshot to pick up `output_url` (TRD §7 SSE contract — unchanged).
 
-**Coordination = Approach A** (chosen over DB-poll and last-scene-triggers-compose): the orchestrator is the single place that holds the join. It is I/O-bound, so blocking a coroutine on `gather` for the render duration is free; Arq `keep_result` on the render worker makes `job.result()` work. Resume is the existing DB-state pattern — restart re-reads scenes, skips `done`, re-enqueues + awaits only the rest; the `render_scene` idempotency guard absorbs the rare double-run where a pre-crash job is still in flight.
+**Coordination = Approach A** (chosen over DB-poll and last-scene-triggers-compose): the orchestrator is the single place that holds the join. It is I/O-bound, so blocking a coroutine on `gather` for the render duration is free; Arq `keep_result` on the render worker makes `job.result()` work, and on final job failure `result()` re-raises the worker's exception. Resume is the existing DB-state pattern — restart re-reads scenes, skips `done`, re-enqueues + awaits only the rest (the double-run window is acknowledged in §8).
 
-`_assert_not_terminal` checkpoints (cancellation) are kept before fan-out and before compose. Killing in-flight containers on cancel is deferred (§2) — sub-second trivial renders make it moot until Manim.
+`_assert_not_terminal` checkpoints (cancellation) are kept before fan-out and before compose. Killing in-flight containers on cancel is deferred (§2); a cancel landing mid-fan-out is best-effort — sub-second trivial renders finish, and the post-render conditional `RENDERING → COMPOSING` transition (`expected_from=RENDERING`) aborts cleanly via `_AbortedError` on a now-`cancelled` job.
 
 ---
 
@@ -240,6 +242,11 @@ The orchestrator opens a render-queue pool once per run via `create_pool(redis_s
 - **Hard render failure** (non-zero exit, timeout, empty output): the scene goes `failed`, a `renders` row records `failed` + stderr, and the orchestrator fails the **whole job** with a typed `render_error` (no `partially_failed` in M4 — see §2). A trivial-renderer hard failure indicates an infra/bug condition, not a content problem worth partial-resuming.
 - **Compose failure:** job → `failed` with `compose_error`.
 - **Idempotent resume:** `render_scene` skips `done` scenes; `compose_video` skips a job that already has `output_url`. An orchestrator re-delivery re-enqueues and awaits only incomplete scenes, then compose. This reuses the database-as-source-of-truth resume model already in the orchestrator (TRD §4.6) — no new checkpointing.
+
+**Known limitations (accepted for M4, hardened in M5):**
+
+- **Resume double-run window.** The idempotency guard is a status read (`skip if done`), so it has a TOCTOU window: an orchestrator re-delivery can re-enqueue a scene whose prior `render_scene` is still in flight; both pass the guard and the second `record(SCENE_MP4)` hits the `assets(job_id, scene_id, kind)` unique constraint and errors. At ≤20 users with sub-second trivial renders this is vanishingly rare. M5 closes it with deterministic Arq `_job_id` per scene (TRD §4.5's "deterministic UUID"), where queue-level dedup also matters because Manim renders are long enough for the window to widen.
+- **`FINAL_MP4` is not DB-dedup'd.** The `assets` unique key includes `scene_id`, which is `NULL` for `FINAL_MP4`; Postgres treats `NULL`s as distinct, so a compose re-run is prevented only by the `job.output_url` idempotency guard (§6 step 1), not by the constraint.
 
 ---
 
@@ -268,7 +275,7 @@ compose_result_timeout_seconds: int = Field(default=300, gt=0)  # orchestrator a
 ## 10. Worker wiring (`app/workers/arq_settings.py`)
 
 - `RENDER_QUEUE = "render_pool"` as a module constant (mirrors the existing `ORCHESTRATOR_QUEUE` — queue names live in code, not config, matching the current pattern).
-- Keep `WorkerSettings` (orchestrator) as-is, plus a render-queue pool helper the orchestrator imports.
+- Keep `WorkerSettings` (orchestrator) as-is. The orchestrator enqueues via `ctx["redis"]` (§7), so no separate pool helper is needed.
 - Add `RenderWorkerSettings`:
   - `functions = [render_scene, compose_video]`
   - `queue_name = "render_pool"`
@@ -288,10 +295,13 @@ compose_result_timeout_seconds: int = Field(default=300, gt=0)  # orchestrator a
 **Unit (fast, no Docker — the sandbox runner is faked):**
 - `run_sandboxed` constructs the exact `docker run` argv (assert flags, mounts, image, command) with a faked `create_subprocess_exec`; timeout path issues `docker kill` and returns `exit_code=124, timed_out=True`.
 - `TrivialRenderer.render` stages `text.txt` + `audio.wav` and builds the expected ffmpeg command; verifies `-t` equals the scene duration and the output target is `/out/scene.mp4`.
-- `render_scene` job (faked `get_sandbox_runner` writes a canned MP4): asserts `SCENE_MP4` asset row, `scenes.output_url`, scene `done`, and a `renders` row `succeeded` with `duration_ms`. Failure variant (faked non-zero result): scene `failed`, `renders` row `failed` + stderr, exception raised.
-- `compose_video` job (faked runner): asserts `FINAL_MP4` asset, `jobs.output_url`, idempotent skip when `output_url` already set.
-- Orchestrator E2E: monkeypatch the render-queue `enqueue_job`/`result` to run `render_scene`/`compose_video` in-process against the faked runner (or stub the results) → a job walks `queued → … → done` with `stage="render"`/`stage="compose"` progress events and a non-null `output_url`. Scene-failure variant → job `failed` with `render_error`. Resume variant → pre-mark a scene `done`, assert it is not re-rendered.
-- SSE contract regression ([tests/api/test_sse.py](../../../tests/api/test_sse.py)): assert `stage="render"` and `stage="compose"` events appear on the stream (mirrors the M3 `stage="tts"` assertion).
+- **Render-job seams** live in `app.workers.render` (`get_sandbox_runner`, `get_renderer`, `get_storage`), monkeypatched there — mirroring the `app.workers.orchestrator.get_tts_client` convention. The faked sandbox runner writes a canned MP4 to `output_dir` and returns a chosen `RunResult`.
+- `render_scene` job (faked seams): asserts `SCENE_MP4` asset row, `scenes.output_url`, scene `done`, and a `renders` row `succeeded` with `duration_ms`. Failure variant (faked non-zero result): scene `failed`, `renders` row `failed` + stderr, exception raised.
+- `compose_video` job (faked seams): asserts `FINAL_MP4` asset, `jobs.output_url`, idempotent skip when `output_url` already set.
+- **Fake render pool, injected via ctx.** A test `FakeArqPool` whose `enqueue_job(fn_name, *args, ...)` runs `render_scene`/`compose_video` in-process and returns a handle whose `result()` returns (or re-raises). Driven as `run_video({"_test_no_sleep": True, "redis": fake_pool}, job_id)`. A shared `stub_render` fixture bundles the fake pool + faked sandbox/renderer/storage seams, alongside the existing `stub_tts`.
+- **Migrate the existing `TestRunVideo` suite — not just add tests.** Every test that runs `run_video` to completion ([test_orchestrator.py](../../../tests/workers/test_orchestrator.py): `test_walks_job_to_done`, `test_creates_scenes_from_script`, the voicing/resume/storage-failure tests) now reaches the fan-out and would block forever on `result()` without a worker, so each gains the `stub_render` fixture. Stale assertions change too: `job.progress["stage"] == "stub_render"` becomes `"render"`/`"compose"`, and the scene-`DONE` checks now verify the render jobs (not the orchestrator) drove the transition.
+- Orchestrator E2E (happy path): a job walks `queued → … → done` with worker-published `stage="render"` (per scene) and `stage="compose"` progress on the SSE stream and a non-null `output_url`. Scene-failure variant → job `failed` with `render_error`. Resume variant → pre-mark a scene `done`, assert it is not re-rendered.
+- SSE contract regression ([tests/api/test_sse.py](../../../tests/api/test_sse.py)): assert `stage="render"` and `stage="compose"` events appear on the stream (mirrors the M3 `stage="tts"` assertion). Because progress is now worker-published, the in-process `FakeArqPool` must run the jobs against the same Redis the SSE subscriber uses (the test Redis container) for the events to land.
 
 **Live integration — gated, manual, not CI:** `scripts/smoke_render.py` + `make smoke-render` behind `ALGOREEL_ALLOW_LIVE_RENDER=1` (mirrors `smoke-llm`/`smoke-tts`). Builds the image, renders one scene from a tiny canned wav, composes, and writes a real MP4 under `MEDIA_ROOT`. Excluded from CI because nested `docker run` inside the test container is heavier than the testcontainers Postgres/Redis the suite already provisions.
 
