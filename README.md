@@ -11,8 +11,10 @@ cp .env.example .env
 make install
 make up           # start postgres + redis
 make migrate
-make dev          # in one shell
-make worker       # in another shell
+make render-image # build the render container once
+make dev          # API, in one shell
+make worker       # orchestrator pool, in another shell
+make render-worker # render pool, in a third shell
 ```
 
 ## Tests
