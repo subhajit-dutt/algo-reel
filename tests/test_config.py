@@ -24,3 +24,19 @@ def test_tts_and_storage_settings_load() -> None:
     assert s.tts_max_concurrency == 4
     assert s.tts_max_retries == 2
     assert s.media_root == "./.media"
+
+
+def test_render_settings_load() -> None:
+    get_settings.cache_clear()
+    s = get_settings()
+    assert s.render_image == "algoreel-render:m4"
+    assert s.render_video_size == "1280x720"
+    assert s.render_video_fps == 30
+    assert s.render_bg_color == "0x0B132B"
+    assert s.render_memory == "2g"
+    assert s.render_cpus == "1.0"
+    assert s.render_pids_limit == 256
+    assert s.render_user == "10001:10001"
+    assert s.render_timeout_seconds == 120
+    assert s.render_result_timeout_seconds == 900
+    assert s.compose_result_timeout_seconds == 300

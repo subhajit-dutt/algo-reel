@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     tts_max_concurrency: int = Field(default=4, gt=0)
     media_root: str = "./.media"
 
+    render_image: str = "algoreel-render:m4"
+    render_video_size: str = "1280x720"
+    render_video_fps: int = Field(default=30, gt=0)
+    render_bg_color: str = "0x0B132B"
+    render_memory: str = "2g"
+    render_cpus: str = Field(default="1.0", min_length=1)
+    render_pids_limit: int = Field(default=256, gt=0)
+    render_user: str = "10001:10001"
+    render_timeout_seconds: int = Field(default=120, gt=0)
+    render_result_timeout_seconds: int = Field(default=900, gt=0)
+    compose_result_timeout_seconds: int = Field(default=300, gt=0)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
