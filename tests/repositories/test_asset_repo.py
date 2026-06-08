@@ -49,3 +49,11 @@ async def test_audio_scene_ids_empty_when_none(
 ) -> None:
     job_id, _ = seeded
     assert await AssetRepo(clean_db).audio_scene_ids(job_id) == set()
+
+
+async def test_storage_key_for(clean_db: AsyncSession, seeded: tuple[int, list[int]]) -> None:
+    job_id, scene_ids = seeded
+    repo = AssetRepo(clean_db)
+    await repo.record(job_id, scene_ids[0], AssetKind.AUDIO, "audio/1/1.wav", 10, "audio/wav")
+    await clean_db.commit()
+    assert await repo.storage_key_for(scene_ids[0], AssetKind.AUDIO) == "audio/1/1.wav"

@@ -45,3 +45,12 @@ class SceneRepo:
             .where(Scene.id == scene_id)
             .values(duration_seconds=seconds.quantize(Decimal("0.01")))
         )
+
+    async def get(self, scene_id: int) -> Scene | None:
+        result = await self._session.execute(select(Scene).where(Scene.id == scene_id))
+        return result.scalar_one_or_none()
+
+    async def set_output_url(self, scene_id: int, url: str) -> None:
+        await self._session.execute(
+            update(Scene).where(Scene.id == scene_id).values(output_url=url)
+        )

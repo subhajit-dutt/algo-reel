@@ -76,3 +76,8 @@ class JobRepo:
         await self._session.execute(
             update(Job).where(Job.id == job_id).values(cost_usd=Job.cost_usd + delta)
         )
+
+    async def set_output_url(self, job_id: int, url: str) -> None:
+        await self._session.execute(
+            update(Job).where(Job.id == job_id).values(output_url=url)
+        )
