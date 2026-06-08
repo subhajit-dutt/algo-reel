@@ -17,6 +17,9 @@ class LocalStorage:
         path.write_bytes(data)
         return StoredObject(key=key, bytes=len(data))
 
+    async def get(self, key: str) -> bytes:
+        return (self._root / key).read_bytes()
+
     def url(self, key: str) -> str:
         return (self._root / key).resolve().as_uri()
 

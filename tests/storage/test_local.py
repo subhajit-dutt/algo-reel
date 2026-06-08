@@ -24,3 +24,9 @@ def test_url_is_file_uri(tmp_path: Path) -> None:
     storage = LocalStorage(tmp_path)
     assert storage.url("audio/1/2.wav").startswith("file://")
     assert storage.url("audio/1/2.wav").endswith("audio/1/2.wav")
+
+
+async def test_get_round_trips_bytes(tmp_path: Path) -> None:
+    storage = LocalStorage(tmp_path)
+    await storage.put("video/1/2.mp4", b"\x00MP4DATA", "video/mp4")
+    assert await storage.get("video/1/2.mp4") == b"\x00MP4DATA"
