@@ -96,8 +96,12 @@ async def render_scene(ctx: dict[str, Any], scene_id: int, scene_total: int) -> 
                     key = f"video/{scene.job_id}/{scene_id}.mp4"
                     stored = await storage.put(key, data, "video/mp4")
                     await asset_repo.record(
-                        scene.job_id, scene_id, AssetKind.SCENE_MP4, stored.key,
-                        stored.bytes, "video/mp4",
+                        scene.job_id,
+                        scene_id,
+                        AssetKind.SCENE_MP4,
+                        stored.key,
+                        stored.bytes,
+                        "video/mp4",
                     )
                     await scene_repo.set_output_url(scene_id, storage.url(key))
                     await scene_repo.update_status(scene_id, SceneStatus.DONE)
@@ -169,8 +173,17 @@ async def compose_video(ctx: dict[str, Any], job_id: int) -> None:
                     user=s.render_user,
                 )
                 command = [
-                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                    "-i", "/in/list.txt", "-c", "copy", "/out/final.mp4",
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    "/in/list.txt",
+                    "-c",
+                    "copy",
+                    "/out/final.mp4",
                 ]
                 result = await runner(
                     image=s.render_image,

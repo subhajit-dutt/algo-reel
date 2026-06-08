@@ -43,7 +43,9 @@ async def _main() -> None:
         (in_dir / "audio.wav").write_bytes(_silent_wav(3.0))
         result = await TrivialRenderer().render(
             job_id=0,
-            render_in=RenderInput(scene_index=0, text="algo-reel smoke render", duration=Decimal("3.00")),
+            render_in=RenderInput(
+                scene_index=0, text="algo-reel smoke render", duration=Decimal("3.00")
+            ),
             input_dir=in_dir,
             output_dir=out_dir,
         )
@@ -59,14 +61,31 @@ async def _main() -> None:
         (in_dir / "0.mp4").write_bytes(scene_mp4.read_bytes())
         (in_dir / "list.txt").write_text("file '/in/0.mp4'\n")
         limits = SandboxLimits(
-            memory=s.render_memory, cpus=s.render_cpus, pids_limit=s.render_pids_limit,
-            timeout_seconds=s.render_timeout_seconds, user=s.render_user,
+            memory=s.render_memory,
+            cpus=s.render_cpus,
+            pids_limit=s.render_pids_limit,
+            timeout_seconds=s.render_timeout_seconds,
+            user=s.render_user,
         )
         result = await get_sandbox_runner()(
             image=s.render_image,
-            command=["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "/in/list.txt",
-                     "-c", "copy", "/out/final.mp4"],
-            input_dir=in_dir, output_dir=out_dir, limits=limits, name="algoreel-smoke-compose",
+            command=[
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                "/in/list.txt",
+                "-c",
+                "copy",
+                "/out/final.mp4",
+            ],
+            input_dir=in_dir,
+            output_dir=out_dir,
+            limits=limits,
+            name="algoreel-smoke-compose",
         )
         if result.exit_code != 0:
             print(f"compose failed: {result.stderr}")

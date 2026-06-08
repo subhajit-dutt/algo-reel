@@ -14,8 +14,13 @@ async def test_builds_card_command_and_stages_text(
     captured: dict[str, object] = {}
 
     async def fake_runner(
-        *, image: str, command: list[str], input_dir: Path, output_dir: Path,
-        limits: object, name: str,
+        *,
+        image: str,
+        command: list[str],
+        input_dir: Path,
+        output_dir: Path,
+        limits: object,
+        name: str,
     ) -> RunResult:
         captured["command"] = command
         captured["name"] = name

@@ -34,8 +34,9 @@ class _FakeRenderer:
         self.fail = fail
         self.calls = 0
 
-    async def render(self, *, job_id: int, render_in: object, input_dir: Path,
-                     output_dir: Path) -> RunResult:
+    async def render(
+        self, *, job_id: int, render_in: object, input_dir: Path, output_dir: Path
+    ) -> RunResult:
         self.calls += 1
         if self.fail:
             return RunResult(exit_code=1, stdout="", stderr="boom", timed_out=False)
@@ -49,7 +50,10 @@ async def _seed_voiced_scene(session: AsyncSession, storage: LocalStorage) -> tu
     )
     await session.flush()
     script = VideoScript(
-        title="t", renderer=Renderer.MANIM, voice="alloy", total_duration=5.0,
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=5.0,
         scenes=[DomainScene(index=0, narration="hi", visual_prompt="v", duration_seconds=5.0)],
     )
     scenes = await SceneRepo(session).bulk_insert_from_script(job.id, script)
@@ -127,8 +131,15 @@ async def test_compose_video_concats(
     storage = LocalStorage(tmp_path)
     monkeypatch.setattr("app.workers.render.get_storage", lambda: storage)
 
-    async def fake_runner(*, image: str, command: list[str], input_dir: Path,
-                          output_dir: Path, limits: object, name: str) -> RunResult:
+    async def fake_runner(
+        *,
+        image: str,
+        command: list[str],
+        input_dir: Path,
+        output_dir: Path,
+        limits: object,
+        name: str,
+    ) -> RunResult:
         (output_dir / "final.mp4").write_bytes(b"\x00FINAL")
         return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
 
@@ -139,7 +150,10 @@ async def test_compose_video_concats(
     )
     await clean_db.flush()
     script = VideoScript(
-        title="t", renderer=Renderer.MANIM, voice="alloy", total_duration=10.0,
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=10.0,
         scenes=[
             DomainScene(index=i, narration=f"n{i}", visual_prompt="v", duration_seconds=5.0)
             for i in range(2)

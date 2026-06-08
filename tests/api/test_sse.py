@@ -286,11 +286,13 @@ class TestSseEvents:
         assert tts_events, "expected at least one stage=tts progress event"
         assert all(e["status"] == "script_ready" for e in tts_events)
         render_events = [
-            e for e in collected
+            e
+            for e in collected
             if e.get("event") == "progress" and e.get("progress", {}).get("stage") == "render"  # type: ignore[union-attr]
         ]
         compose_events = [
-            e for e in collected
+            e
+            for e in collected
             if e.get("event") == "progress" and e.get("progress", {}).get("stage") == "compose"  # type: ignore[union-attr]
         ]
         assert render_events, "expected stage=render progress events"

@@ -18,7 +18,10 @@ async def scene_id(clean_db: AsyncSession) -> int:
     )
     await clean_db.flush()
     script = VideoScript(
-        title="t", renderer=Renderer.MANIM, voice="alloy", total_duration=10.0,
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=10.0,
         scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=10.0)],
     )
     scenes = await SceneRepo(clean_db).bulk_insert_from_script(job.id, script)

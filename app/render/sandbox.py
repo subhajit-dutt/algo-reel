@@ -25,23 +25,38 @@ SandboxRunner = Callable[..., Awaitable[RunResult]]
 
 
 def _build_argv(
-    *, image: str, command: list[str], input_dir: Path, output_dir: Path,
-    limits: SandboxLimits, name: str,
+    *,
+    image: str,
+    command: list[str],
+    input_dir: Path,
+    output_dir: Path,
+    limits: SandboxLimits,
+    name: str,
 ) -> list[str]:
     return [
-        "docker", "run", "--rm",
-        "--name", name,
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        name,
         "--network=none",
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
-        "--user", limits.user,
-        "--memory", limits.memory,
-        "--cpus", limits.cpus,
-        "--pids-limit", str(limits.pids_limit),
-        "--tmpfs", "/tmp:rw,size=64m",
-        "-v", f"{input_dir}:/in:ro",
-        "-v", f"{output_dir}:/out",
+        "--user",
+        limits.user,
+        "--memory",
+        limits.memory,
+        "--cpus",
+        limits.cpus,
+        "--pids-limit",
+        str(limits.pids_limit),
+        "--tmpfs",
+        "/tmp:rw,size=64m",
+        "-v",
+        f"{input_dir}:/in:ro",
+        "-v",
+        f"{output_dir}:/out",
         image,
         *command,
     ]
@@ -49,19 +64,31 @@ def _build_argv(
 
 async def _kill(name: str) -> None:
     proc = await asyncio.create_subprocess_exec(
-        "docker", "kill", name,
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        "docker",
+        "kill",
+        name,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     await proc.wait()
 
 
 async def run_sandboxed(
-    *, image: str, command: list[str], input_dir: Path, output_dir: Path,
-    limits: SandboxLimits, name: str,
+    *,
+    image: str,
+    command: list[str],
+    input_dir: Path,
+    output_dir: Path,
+    limits: SandboxLimits,
+    name: str,
 ) -> RunResult:
     argv = _build_argv(
-        image=image, command=command, input_dir=input_dir, output_dir=output_dir,
-        limits=limits, name=name,
+        image=image,
+        command=command,
+        input_dir=input_dir,
+        output_dir=output_dir,
+        limits=limits,
+        name=name,
     )
     proc = await asyncio.create_subprocess_exec(
         *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -71,7 +98,8 @@ async def run_sandboxed(
     except TimeoutError:
         await _kill(name)
         return RunResult(
-            exit_code=124, stdout="",
+            exit_code=124,
+            stdout="",
             stderr=f"container '{name}' timed out after {limits.timeout_seconds}s",
             timed_out=True,
         )
