@@ -78,6 +78,4 @@ class JobRepo:
         )
 
     async def set_output_url(self, job_id: int, url: str) -> None:
-        await self._session.execute(
-            update(Job).where(Job.id == job_id).values(output_url=url)
-        )
+        await self._session.execute(update(Job).where(Job.id == job_id).values(output_url=url))

@@ -109,7 +109,10 @@ async def test_get_and_set_output_url(clean_db: AsyncSession) -> None:
     )
     await clean_db.flush()
     script = VideoScript(
-        title="t", renderer=Renderer.MANIM, voice="alloy", total_duration=10.0,
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=10.0,
         scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=10.0)],
     )
     repo = SceneRepo(clean_db)

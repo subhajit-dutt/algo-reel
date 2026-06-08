@@ -9,6 +9,17 @@ from app.workers.orchestrator import run_video
 from app.workers.queues import ORCHESTRATOR_QUEUE, RENDER_QUEUE
 from app.workers.render import compose_video, render_scene
 
+# Explicit re-export: ORCHESTRATOR_QUEUE/RENDER_QUEUE are defined in app.workers.queues
+# but imported by callers (e.g. app/main.py) via this module. __all__ marks them as
+# exported so mypy's no-implicit-reexport accepts those imports.
+__all__ = [
+    "ORCHESTRATOR_QUEUE",
+    "RENDER_QUEUE",
+    "RenderWorkerSettings",
+    "WorkerSettings",
+    "redis_settings",
+]
+
 
 def redis_settings() -> RedisSettings:
     return RedisSettings.from_dsn(get_settings().redis_url)

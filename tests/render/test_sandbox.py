@@ -11,8 +11,9 @@ _LIMITS = SandboxLimits(
 
 
 class _FakeProc:
-    def __init__(self, *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0,
-                 hang: bool = False) -> None:
+    def __init__(
+        self, *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0, hang: bool = False
+    ) -> None:
         self._stdout = stdout
         self._stderr = stderr
         self.returncode = returncode
@@ -36,14 +37,22 @@ async def test_builds_locked_down_argv(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
     result = await run_sandboxed(
-        image="img:1", command=["ffmpeg", "-x"], input_dir=tmp_path / "in",
-        output_dir=tmp_path / "out", limits=_LIMITS, name="c1",
+        image="img:1",
+        command=["ffmpeg", "-x"],
+        input_dir=tmp_path / "in",
+        output_dir=tmp_path / "out",
+        limits=_LIMITS,
+        name="c1",
     )
     assert result == RunResult(exit_code=0, stdout="ok", stderr="", timed_out=False)
     argv = seen["argv"]
     assert argv[:3] == ["docker", "run", "--rm"]
-    for flag in ("--network=none", "--read-only", "--cap-drop=ALL",
-                 "--security-opt=no-new-privileges"):
+    for flag in (
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+    ):
         assert flag in argv
     assert argv[argv.index("--name") + 1] == "c1"
     assert argv[argv.index("--user") + 1] == "10001:10001"
@@ -65,8 +74,12 @@ async def test_timeout_kills_and_flags(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
     limits = SandboxLimits(memory="2g", cpus="1.0", pids_limit=256, timeout_seconds=0, user="x")
     result = await run_sandboxed(
-        image="img", command=["ffmpeg"], input_dir=tmp_path, output_dir=tmp_path,
-        limits=limits, name="c2",
+        image="img",
+        command=["ffmpeg"],
+        input_dir=tmp_path,
+        output_dir=tmp_path,
+        limits=limits,
+        name="c2",
     )
     assert result.timed_out is True
     assert result.exit_code == 124
