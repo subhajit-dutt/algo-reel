@@ -38,3 +38,10 @@ class SceneRepo:
         await self._session.execute(
             update(Scene).where(Scene.id == scene_id).values(status=status.value)
         )
+
+    async def set_duration(self, scene_id: int, seconds: Decimal) -> None:
+        await self._session.execute(
+            update(Scene)
+            .where(Scene.id == scene_id)
+            .values(duration_seconds=seconds.quantize(Decimal("0.01")))
+        )

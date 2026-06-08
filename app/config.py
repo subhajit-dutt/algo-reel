@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+TTSResponseFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -22,6 +24,16 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = Field(default=60, gt=0)
     max_script_cost_usd: Decimal = Field(default=Decimal("0.10"), gt=Decimal(0))
     max_scenes_per_video: int = Field(default=12, gt=0)
+
+    openai_api_key: str = Field(min_length=1)
+    tts_model: str = "gpt-4o-mini-tts"
+    tts_voice_default: str = "coral"
+    tts_instructions: str = "Calm tutorial voice, clear pacing, slight pause between sentences."
+    tts_response_format: TTSResponseFormat = "wav"
+    tts_timeout_seconds: int = Field(default=60, gt=0)
+    tts_max_retries: int = Field(default=2, ge=0)
+    tts_max_concurrency: int = Field(default=4, gt=0)
+    media_root: str = "./.media"
 
 
 @lru_cache(maxsize=1)
