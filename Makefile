@@ -1,4 +1,4 @@
-.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm smoke-tts frontend-install frontend-build
+.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm smoke-tts render-image render-worker smoke-render frontend-install frontend-build
 
 install:
 	uv sync
@@ -43,6 +43,15 @@ smoke-llm:
 
 smoke-tts:
 	ALGOREEL_ALLOW_LIVE_TTS=1 uv run python -m scripts.smoke_tts $(args)
+
+render-image:
+	docker build -t algoreel-render:m4 docker/render
+
+render-worker:
+	uv run arq app.workers.arq_settings.RenderWorkerSettings
+
+smoke-render:
+	ALGOREEL_ALLOW_LIVE_RENDER=1 uv run python -m scripts.smoke_render
 
 frontend-install:
 	cd frontend && npm install

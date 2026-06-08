@@ -83,7 +83,7 @@ curl -sS http://localhost:8000/api/videos/42 \
   "voice": "alloy",
   "duration_target_seconds": 60,
   "status": "rendering",
-  "progress": {"current_scene": 2, "total": 4, "stage": "stub_render"},
+  "progress": {"current_scene": 2, "total": 4, "stage": "render"},
   "output_url": null,
   "cost_usd": "0.0067",
   "error": null,
@@ -165,7 +165,10 @@ event: progress
 data: {"event":"progress","job_id":42,"status":"script_ready","progress":{"current_scene":1,"total":3,"stage":"tts"},"scene_id":101,"error":null,"ts":"2026-05-19T18:00:04Z"}
 
 event: progress
-data: {"event":"progress","job_id":42,"status":"rendering","progress":{"current_scene":1,"total":3,"stage":"stub_render"},"scene_id":101,"error":null,"ts":"2026-05-19T18:00:08Z"}
+data: {"event":"progress","job_id":42,"status":"rendering","progress":{"current_scene":1,"total":3,"stage":"render"},"scene_id":101,"error":null,"ts":"2026-05-19T18:00:06Z"}
+
+event: progress
+data: {"event":"progress","job_id":42,"status":"composing","progress":{"stage":"compose"},"scene_id":null,"error":null,"ts":"2026-05-19T18:00:20Z"}
 
 event: done
 data: {"event":"done","job_id":42,"status":"done","progress":{},"scene_id":null,"error":null,"ts":"2026-05-19T18:00:14Z"}
@@ -173,7 +176,7 @@ data: {"event":"done","job_id":42,"status":"done","progress":{},"scene_id":null,
 
 The SSE `event:` line mirrors the JSON payload's `event` field; clients can dispatch via `EventSource.addEventListener("done", …)`. Heartbeat ping every 15 s.
 
-The `progress.stage` field is one of `"tts"` (per-scene narration synthesis, emitted while `status` is `script_ready`) or `"stub_render"` (the M1/M2 render placeholder; becomes real renderer stages in M4).
+The `progress.stage` field is one of `"tts"` (per-scene narration synthesis, `status` = `script_ready`), `"render"` (per-scene MP4, `status` = `rendering`), or `"compose"` (final concat, `status` = `composing`). On terminal `done`, `output_url` is non-null and points at the final MP4.
 
 **Errors**
 
