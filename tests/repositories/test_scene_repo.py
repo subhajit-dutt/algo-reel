@@ -95,3 +95,34 @@ async def test_set_duration_overwrites_placeholder(clean_db: AsyncSession) -> No
 
     refreshed = await repo.list_by_job(job.id)
     assert refreshed[0].duration_seconds == Decimal("4.25")
+
+
+async def test_get_and_set_output_url(clean_db: AsyncSession) -> None:
+    from app.domain.enums import Renderer, SceneStatus
+    from app.domain.script import Scene as DomainScene
+    from app.domain.script import VideoScript
+    from app.repositories.job_repo import JobRepo
+    from app.repositories.scene_repo import SceneRepo
+
+    job = await JobRepo(clean_db).create(
+        user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=30
+    )
+    await clean_db.flush()
+    script = VideoScript(
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=10.0,
+        scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=10.0)],
+    )
+    repo = SceneRepo(clean_db)
+    scenes = await repo.bulk_insert_from_script(job.id, script)
+    sid = scenes[0].id
+    await repo.set_output_url(sid, "file:///x/scene.mp4")
+    await clean_db.commit()
+
+    got = await repo.get(sid)
+    assert got is not None
+    assert got.output_url == "file:///x/scene.mp4"
+    assert got.status == SceneStatus.PENDING.value
+    assert await repo.get(999999) is None

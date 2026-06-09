@@ -37,3 +37,9 @@ class AssetRepo:
             )
         )
         return {sid for sid in result.scalars().all() if sid is not None}
+
+    async def storage_key_for(self, scene_id: int, kind: AssetKind) -> str:
+        result = await self._session.execute(
+            select(Asset.storage_key).where(Asset.scene_id == scene_id, Asset.kind == kind.value)
+        )
+        return result.scalar_one()

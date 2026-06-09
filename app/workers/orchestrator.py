@@ -18,11 +18,9 @@ from app.services.progress_publisher import ProgressPublisher
 from app.storage import get_storage
 from app.tts.client import get_tts_client
 from app.tts.synthesizer import synthesize_scene
+from app.workers.queues import RENDER_QUEUE
 
 log = get_logger("workers.orchestrator")
-
-_PER_SCENE_DELAY_S = 1.0
-_COMPOSING_DELAY_S = 1.0
 
 
 class _AbortedError(Exception):
@@ -36,19 +34,25 @@ class _SceneTTSError(Exception):
         self.message = message
 
 
+class _SceneRenderError(Exception):
+    def __init__(self, scene_index: int | None, message: str) -> None:
+        super().__init__(message)
+        self.scene_index = scene_index
+        self.message = message
+
+
+class _ComposeError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 async def run_video(ctx: dict[str, Any], job_id: int) -> None:
-    no_sleep = bool(ctx.get("_test_no_sleep"))
-
-    async def _sleep(seconds: float) -> None:
-        if no_sleep:
-            return
-        await asyncio.sleep(seconds)
-
     redis = create_redis_client()
     publisher = ProgressPublisher(redis)
     try:
         async with session_scope() as session:
-            await _execute(session, job_id, _sleep, publisher)
+            await _execute(ctx, session, job_id, publisher)
     except _AbortedError:
         log.info("orchestrator.aborted", job_id=job_id)
     finally:
@@ -56,9 +60,9 @@ async def run_video(ctx: dict[str, Any], job_id: int) -> None:
 
 
 async def _execute(
+    ctx: dict[str, Any],
     session: Any,
     job_id: int,
-    sleep: Any,
     publisher: ProgressPublisher,
 ) -> None:
     job_repo = JobRepo(session)
@@ -142,36 +146,36 @@ async def _execute(
         current = JobStatus.RENDERING
 
     if current == JobStatus.RENDERING:
-        scenes = await scene_repo.list_by_job(job_id)
-        for scene in scenes:
-            if scene.status == SceneStatus.DONE.value:
-                continue
-            await _assert_not_terminal(job_repo, job_id)
-            await scene_repo.update_status(scene.id, SceneStatus.RENDERING)
-            await sleep(_PER_SCENE_DELAY_S)
-            await scene_repo.update_status(scene.id, SceneStatus.DONE)
-            progress = {
-                "current_scene": scene.index + 1,
-                "total": len(scenes),
-                "stage": "stub_render",
-            }
-            await job_repo.set_progress(job_id, progress)
-            # Commit per-scene so a cancel mid-loop doesn't roll back finished work.
-            await session.commit()
-            await publisher.publish(
-                ProgressEvent(
-                    event="progress",
-                    job_id=job_id,
-                    status=JobStatus.RENDERING,
-                    progress=progress,
-                    scene_id=scene.id,
-                )
+        try:
+            await _render_all_scenes(ctx, session, job_id, job_repo, scene_repo)
+        except _SceneRenderError as e:
+            await _fail(
+                job_repo,
+                publisher,
+                job_id,
+                JobStatus.RENDERING,
+                {"type": "render_error", "scene_index": e.scene_index, "message": e.message},
             )
+            return
         await _transition(job_repo, publisher, job_id, JobStatus.RENDERING, JobStatus.COMPOSING)
         current = JobStatus.COMPOSING
 
     if current == JobStatus.COMPOSING:
-        await sleep(_COMPOSING_DELAY_S)
+        # Commit the COMPOSING transition before awaiting compose: the compose
+        # worker updates the jobs row on its own session, so the orchestrator must
+        # release the row lock first (same reason as the RENDERING fan-out above).
+        await session.commit()
+        try:
+            await _compose(ctx, job_id)
+        except _ComposeError as e:
+            await _fail(
+                job_repo,
+                publisher,
+                job_id,
+                JobStatus.COMPOSING,
+                {"type": "compose_error", "message": e.message},
+            )
+            return
         await _transition(job_repo, publisher, job_id, JobStatus.COMPOSING, JobStatus.DONE)
 
     log.info("orchestrator.completed", job_id=job_id)
@@ -247,6 +251,52 @@ async def _voice_all_scenes(
     if total_cost > 0:
         await job_repo.add_cost(job.id, total_cost)
     await session.commit()
+
+
+async def _render_all_scenes(
+    ctx: dict[str, Any],
+    session: Any,
+    job_id: int,
+    job_repo: JobRepo,
+    scene_repo: SceneRepo,
+) -> None:
+    await _assert_not_terminal(job_repo, job_id)
+    # Commit the RENDERING transition before fanning out: the render-pool workers
+    # update the jobs row (set_progress) on their own sessions, so the orchestrator
+    # must not hold an uncommitted row lock on it across the multi-minute gather.
+    await session.commit()
+    pool = ctx["redis"]
+    s = get_settings()
+    scenes = await scene_repo.list_by_job(job_id)
+    scene_total = len(scenes)
+    pending = [sc for sc in scenes if sc.status != SceneStatus.DONE.value]
+    handles = []
+    for sc in pending:
+        handle = await pool.enqueue_job(
+            "render_scene", sc.id, scene_total, _queue_name=RENDER_QUEUE
+        )
+        if handle is None:
+            raise _SceneRenderError(sc.index, f"enqueue returned None for scene {sc.id}")
+        handles.append(handle)
+    try:
+        await asyncio.gather(*[h.result(timeout=s.render_result_timeout_seconds) for h in handles])
+    except Exception as exc:
+        session.expire_all()
+        refreshed = await scene_repo.list_by_job(job_id)
+        failed = next((sc for sc in refreshed if sc.status == SceneStatus.FAILED.value), None)
+        raise _SceneRenderError(failed.index if failed else None, str(exc)) from exc
+
+
+async def _compose(ctx: dict[str, Any], job_id: int) -> None:
+    pool = ctx["redis"]
+    s = get_settings()
+    handle = await pool.enqueue_job("compose_video", job_id, _queue_name=RENDER_QUEUE)
+    if handle is None:
+        raise _ComposeError(f"enqueue returned None for compose {job_id}")
+    try:
+        await handle.result(timeout=s.compose_result_timeout_seconds)
+    except Exception as exc:
+        raise _ComposeError(str(exc)) from exc
 
 
 async def _transition(

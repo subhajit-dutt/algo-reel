@@ -17,11 +17,13 @@ from app.domain.script import Scene as DomainScene
 from app.domain.script import VideoScript
 from app.llm.script_agent import script_agent
 from app.main import create_app
+from app.render.sandbox import RunResult
 from app.repositories.job_repo import JobRepo
 from app.schemas.event import ProgressEvent
 from app.services.progress_publisher import ProgressPublisher
 from app.storage import LocalStorage
 from app.workers.orchestrator import run_video
+from app.workers.render import compose_video, render_scene
 
 
 @pytest_asyncio.fixture
@@ -209,6 +211,42 @@ class TestSseEvents:
         models.ALLOW_MODEL_REQUESTS = False
         monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: _FakeTTSClient())
         monkeypatch.setattr("app.workers.orchestrator.get_storage", lambda: LocalStorage(tmp_path))
+        monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
+
+        class _FakeRenderer:
+            async def render(self, *, job_id, render_in, input_dir, output_dir):  # type: ignore[no-untyped-def]
+                (output_dir / "scene.mp4").write_bytes(b"\x00FAKEMP4")
+                return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
+
+        monkeypatch.setattr("app.workers.render.get_renderer", lambda: _FakeRenderer())
+
+        async def _fake_runner(*, image, command, input_dir, output_dir, limits, name):  # type: ignore[no-untyped-def]
+            (output_dir / "final.mp4").write_bytes(b"\x00FINAL")
+            return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
+
+        monkeypatch.setattr("app.workers.render.get_sandbox_runner", lambda: _fake_runner)
+
+        class _Job:
+            def __init__(self, value=None, exc=None):  # type: ignore[no-untyped-def]
+                self._value = value
+                self._exc = exc
+
+            async def result(self, timeout=None):  # type: ignore[no-untyped-def]
+                if self._exc is not None:
+                    raise self._exc
+                return self._value
+
+        class _Pool:
+            def __init__(self, fns):  # type: ignore[no-untyped-def]
+                self._fns = fns
+
+            async def enqueue_job(self, function, *args, _queue_name=None):  # type: ignore[no-untyped-def]
+                try:
+                    return _Job(value=await self._fns[function]({}, *args))
+                except Exception as exc:
+                    return _Job(exc=exc)
+
+        pool = _Pool({"render_scene": render_scene, "compose_video": compose_video})
 
         repo = JobRepo(clean_db)
         job = await repo.create(
@@ -235,7 +273,7 @@ class TestSseEvents:
         ):
             await asyncio.gather(
                 _stream(),
-                run_video({"_test_no_sleep": True}, job_id),
+                run_video({"redis": pool}, job_id),
             )
 
         collected = _parse_events(result["body"])
@@ -247,3 +285,17 @@ class TestSseEvents:
         ]
         assert tts_events, "expected at least one stage=tts progress event"
         assert all(e["status"] == "script_ready" for e in tts_events)
+        render_events = [
+            e
+            for e in collected
+            if e.get("event") == "progress" and e.get("progress", {}).get("stage") == "render"  # type: ignore[union-attr]
+        ]
+        compose_events = [
+            e
+            for e in collected
+            if e.get("event") == "progress" and e.get("progress", {}).get("stage") == "compose"  # type: ignore[union-attr]
+        ]
+        assert render_events, "expected stage=render progress events"
+        assert compose_events, "expected a stage=compose progress event"
+        assert all(e["status"] == "rendering" for e in render_events)
+        assert collected[-1]["event"] == "done"
