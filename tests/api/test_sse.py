@@ -226,7 +226,9 @@ class TestSseEvents:
         from app.llm.manim_agent import ManimCodeResult
         from app.llm.manim_critic import CritiqueResult
 
-        async def _fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+        async def _fake_codegen(
+            *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+        ):  # type: ignore[no-untyped-def]
             return ManimCodeResult(
                 code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): self.wait(1)\n",
                 cost_usd=Decimal("0.01"),

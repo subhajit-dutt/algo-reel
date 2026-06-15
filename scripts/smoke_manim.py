@@ -38,13 +38,17 @@ async def main() -> None:
         _wav(in_dir / "audio.wav")
         result = await ManimRenderer().render(
             job_id=0,
-            render_in=RenderInput(scene_index=0, text="hello", duration=Decimal("3.00"), code=_CODE),
+            render_in=RenderInput(
+                scene_index=0, text="hello", duration=Decimal("3.00"), code=_CODE
+            ),
             input_dir=in_dir,
             output_dir=out_dir,
         )
         mp4 = out_dir / "scene.mp4"
         print("exit_code:", result.exit_code, "stderr:", result.stderr[-400:])
-        print("scene.mp4 exists:", mp4.exists(), "bytes:", mp4.stat().st_size if mp4.exists() else 0)
+        print(
+            "scene.mp4 exists:", mp4.exists(), "bytes:", mp4.stat().st_size if mp4.exists() else 0
+        )
         assert result.exit_code == 0 and mp4.exists() and mp4.stat().st_size > 0
 
 

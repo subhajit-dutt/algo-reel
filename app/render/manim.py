@@ -27,7 +27,11 @@ class ManimRenderer:
             timeout_seconds=s.manim_render_timeout_seconds,
             user=s.render_user,
             tmpfs_size=s.manim_tmpfs_size,
-            env=(("HOME", "/tmp"), ("XDG_CACHE_HOME", "/tmp/.cache"), ("MPLCONFIGDIR", "/tmp/.mpl")),
+            env=(
+                ("HOME", "/tmp"),
+                ("XDG_CACHE_HOME", "/tmp/.cache"),
+                ("MPLCONFIGDIR", "/tmp/.mpl"),
+            ),
         )
         runner = get_sandbox_runner()
 
@@ -56,7 +60,10 @@ class ManimRenderer:
         silent = next(output_dir.glob(f"m/videos/**/{_SCENE_NAME}.mp4"), None)
         if silent is None:
             return RunResult(
-                exit_code=1, stdout=manim_result.stdout, stderr="manim produced no mp4", timed_out=False
+                exit_code=1,
+                stdout=manim_result.stdout,
+                stderr="manim produced no mp4",
+                timed_out=False,
             )
         silent_in_container = "/out/" + str(silent.relative_to(output_dir))
 

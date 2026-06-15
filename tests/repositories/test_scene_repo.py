@@ -142,7 +142,10 @@ async def test_set_manim_code(clean_db) -> None:  # type: ignore[no-untyped-def]
     scenes = await SceneRepo(clean_db).bulk_insert_from_script(
         job.id,
         VideoScript(
-            title="t", renderer=Renderer.MANIM, voice="alloy", total_duration=5.0,
+            title="t",
+            renderer=Renderer.MANIM,
+            voice="alloy",
+            total_duration=5.0,
             scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=5.0)],
         ),
     )

@@ -120,7 +120,9 @@ def stub_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeArqPool:
     monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
     monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer())
 
-    async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+    async def fake_codegen(
+        *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+    ):  # type: ignore[no-untyped-def]
         return ManimCodeResult(
             code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): self.wait(1)\n",
             cost_usd=Decimal("0.01"),
@@ -380,7 +382,9 @@ class TestRunVideo:
         monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
         monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FailingRenderer())
 
-        async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+        async def fake_codegen(
+            *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+        ):  # type: ignore[no-untyped-def]
             return ManimCodeResult(
                 code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass",
                 cost_usd=Decimal("0"),
@@ -424,7 +428,9 @@ class TestRunVideo:
         monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
         monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _OneFails())
 
-        async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+        async def fake_codegen(
+            *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+        ):  # type: ignore[no-untyped-def]
             return ManimCodeResult(
                 code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass",
                 cost_usd=Decimal("0"),
