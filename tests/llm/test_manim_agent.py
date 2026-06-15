@@ -9,7 +9,9 @@ models.ALLOW_MODEL_REQUESTS = False
 
 
 async def test_generate_returns_code_and_cost() -> None:
-    canned = ManimCode(code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass")
+    canned = ManimCode(
+        code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass"
+    )
     with manim_agent.override(model=TestModel(custom_output_args=canned.model_dump())):
         result = await generate_manim_code(
             visual_prompt="v",
@@ -23,7 +25,9 @@ async def test_generate_returns_code_and_cost() -> None:
 
 
 async def test_generate_passes_retry_context() -> None:
-    canned = ManimCode(code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass")
+    canned = ManimCode(
+        code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass"
+    )
     with manim_agent.override(model=TestModel(custom_output_args=canned.model_dump())):
         result = await generate_manim_code(
             visual_prompt="v",

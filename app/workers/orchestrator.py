@@ -159,7 +159,11 @@ async def _execute(
                 publisher,
                 job_id,
                 JobStatus.RENDERING,
-                {"type": "render_error", "scene_index": None, "message": "all scenes failed to render"},
+                {
+                    "type": "render_error",
+                    "scene_index": None,
+                    "message": "all scenes failed to render",
+                },
             )
             return
         if outcome == "partial":
@@ -285,7 +289,9 @@ async def _render_all_scenes(
     pending = [sc for sc in scenes if sc.status != SceneStatus.DONE.value]
     handles = []
     for sc in pending:
-        handle = await pool.enqueue_job("render_scene", sc.id, scene_total, _queue_name=RENDER_QUEUE)
+        handle = await pool.enqueue_job(
+            "render_scene", sc.id, scene_total, _queue_name=RENDER_QUEUE
+        )
         if handle is None:
             return "pool_down"
         handles.append(handle)

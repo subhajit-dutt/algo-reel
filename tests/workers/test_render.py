@@ -26,7 +26,9 @@ def _stub_codegen(monkeypatch):  # type: ignore[no-untyped-def]
 
     calls = {"codegen": 0}
 
-    async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+    async def fake_codegen(
+        *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+    ):  # type: ignore[no-untyped-def]
         calls["codegen"] += 1
         code = "from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): self.wait(1)\n"
         return ManimCodeResult(code=code, cost_usd=Decimal("0.05"), model=model)
@@ -116,7 +118,9 @@ async def test_render_scene_failure_marks_failed(
 ) -> None:
     storage = LocalStorage(tmp_path)
     monkeypatch.setattr("app.workers.render.get_storage", lambda: storage)
-    monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer(fail=True))
+    monkeypatch.setattr(
+        "app.workers.render.get_renderer", lambda renderer: _FakeRenderer(fail=True)
+    )
     _stub_codegen(monkeypatch)
     _job_id, sid = await _seed_voiced_scene(clean_db, storage)
 
@@ -147,7 +151,9 @@ async def test_render_scene_idempotent_skip(
 
 
 async def test_render_scene_manim_success_persists_code(
-    clean_db, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+    clean_db,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     from app.domain.enums import AssetKind, SceneStatus
     from app.repositories.asset_repo import AssetRepo
@@ -171,7 +177,9 @@ async def test_render_scene_manim_success_persists_code(
 
 
 async def test_render_scene_manim_retries_then_fails_scene(
-    clean_db, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+    clean_db,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     from sqlalchemy import select
 
@@ -182,7 +190,9 @@ async def test_render_scene_manim_retries_then_fails_scene(
 
     storage = LocalStorage(tmp_path)
     monkeypatch.setattr("app.workers.render.get_storage", lambda: storage)
-    monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer(fail=True))
+    monkeypatch.setattr(
+        "app.workers.render.get_renderer", lambda renderer: _FakeRenderer(fail=True)
+    )
     calls = _stub_codegen(monkeypatch)
     _job_id, sid = await _seed_voiced_scene(clean_db, storage)
 
@@ -250,7 +260,9 @@ async def test_compose_video_concats(
 
 
 async def test_render_scene_manim_cost_includes_failed_attempts(
-    clean_db, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+    clean_db,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     from decimal import Decimal
 
@@ -271,6 +283,7 @@ async def test_render_scene_manim_cost_includes_failed_attempts(
         async def render(self, *, job_id, render_in, input_dir, output_dir):  # type: ignore[no-untyped-def]
             self.n += 1
             from app.render.sandbox import RunResult
+
             if self.n == 1:
                 return RunResult(exit_code=1, stdout="", stderr="boom", timed_out=False)
             (output_dir / "scene.mp4").write_bytes(b"\x00OK")
@@ -278,8 +291,14 @@ async def test_render_scene_manim_cost_includes_failed_attempts(
 
     monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FailThenSucceed())
 
-    async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
-        return ManimCodeResult(code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass", cost_usd=Decimal("0.05"), model=model)
+    async def fake_codegen(
+        *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+    ):  # type: ignore[no-untyped-def]
+        return ManimCodeResult(
+            code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass",
+            cost_usd=Decimal("0.05"),
+            model=model,
+        )
 
     async def fake_critique(*, code, duration_seconds):  # type: ignore[no-untyped-def]
         return CritiqueResult(ok=True, issues=[], cost_usd=Decimal("0.001"))
@@ -300,7 +319,9 @@ async def test_render_scene_manim_cost_includes_failed_attempts(
 
 
 async def test_render_scene_manim_critic_rejection_retries(
-    clean_db, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+    clean_db,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     from decimal import Decimal
 
@@ -317,8 +338,14 @@ async def test_render_scene_manim_critic_rejection_retries(
     monkeypatch.setattr("app.workers.render.get_storage", lambda: storage)
     monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer())
 
-    async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
-        return ManimCodeResult(code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass", cost_usd=Decimal("0.05"), model=model)
+    async def fake_codegen(
+        *, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None
+    ):  # type: ignore[no-untyped-def]
+        return ManimCodeResult(
+            code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass",
+            cost_usd=Decimal("0.05"),
+            model=model,
+        )
 
     state = {"n": 0}
 
@@ -344,7 +371,9 @@ async def test_render_scene_manim_critic_rejection_retries(
 
 
 async def test_render_scene_manim_budget_abort(
-    clean_db, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+    clean_db,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     from decimal import Decimal
 
@@ -374,7 +403,9 @@ async def test_render_scene_manim_budget_abort(
 
 
 async def test_render_scene_simple_path_raises_on_failure(
-    clean_db, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+    clean_db,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     import io
     import wave
@@ -416,7 +447,10 @@ async def test_render_scene_simple_path_raises_on_failure(
     scenes = await SceneRepo(clean_db).bulk_insert_from_script(
         job.id,
         VideoScript(
-            title="t", renderer=Renderer.AI_IMAGE, voice="alloy", total_duration=5.0,
+            title="t",
+            renderer=Renderer.AI_IMAGE,
+            voice="alloy",
+            total_duration=5.0,
             scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=5.0)],
         ),
     )

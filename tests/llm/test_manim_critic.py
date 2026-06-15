@@ -15,7 +15,7 @@ def test_static_gate_rejects_syntax_error() -> None:
 
 
 def test_static_gate_rejects_missing_scene_class() -> None:
-    ok, issues = static_gate("from manim import *\n\nx = 1\n")
+    ok, _ = static_gate("from manim import *\n\nx = 1\n")
     assert ok is False
 
 
@@ -37,6 +37,8 @@ async def test_critique_short_circuits_on_static_failure() -> None:
 
 
 async def test_critique_runs_llm_when_static_passes() -> None:
-    with critic_agent.override(model=TestModel(custom_output_args=Critique(ok=True, issues=[]).model_dump())):
+    with critic_agent.override(
+        model=TestModel(custom_output_args=Critique(ok=True, issues=[]).model_dump())
+    ):
         result = await critique(code=_GOOD, duration_seconds="5.00")
     assert result.ok is True

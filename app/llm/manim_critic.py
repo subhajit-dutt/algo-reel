@@ -58,9 +58,13 @@ async def critique(*, code: str, duration_seconds: str) -> CritiqueResult:
     if not ok:
         return CritiqueResult(ok=False, issues=issues, cost_usd=Decimal("0"))
     s = get_settings()
-    result = await critic_agent.run(build_critic_prompt(code=code, duration_seconds=duration_seconds))
+    result = await critic_agent.run(
+        build_critic_prompt(code=code, duration_seconds=duration_seconds)
+    )
     usage = result.usage
     cost = compute_cost(
-        s.llm_critic_model, input_tokens=usage.input_tokens or 0, output_tokens=usage.output_tokens or 0
+        s.llm_critic_model,
+        input_tokens=usage.input_tokens or 0,
+        output_tokens=usage.output_tokens or 0,
     )
     return CritiqueResult(ok=result.output.ok, issues=result.output.issues, cost_usd=cost)

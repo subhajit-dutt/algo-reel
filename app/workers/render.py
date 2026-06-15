@@ -257,12 +257,22 @@ async def _render_manim_scene(
             )
             await session.commit()
             log.warning(
-                "render.manim_attempt_failed", scene_id=scene.id, attempt=attempt, stderr=last_stderr[:500]
+                "render.manim_attempt_failed",
+                scene_id=scene.id,
+                attempt=attempt,
+                stderr=last_stderr[:500],
             )
-        except Exception as exc:  # any codegen/render/storage error is a per-scene failure, never propagated
+        except (
+            Exception
+        ) as exc:  # any codegen/render/storage error is a per-scene failure, never propagated
             await session.rollback()
             last_stderr = str(exc)
-            log.warning("render.manim_attempt_error", scene_id=scene.id, attempt=attempt, error=str(exc)[:500])
+            log.warning(
+                "render.manim_attempt_error",
+                scene_id=scene.id,
+                attempt=attempt,
+                error=str(exc)[:500],
+            )
             continue
 
     await job_add_cost(session, scene.job_id, loop_cost)
