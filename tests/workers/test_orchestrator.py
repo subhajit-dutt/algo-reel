@@ -21,6 +21,7 @@ from app.repositories.scene_repo import SceneRepo
 from app.storage import LocalStorage
 from app.workers.orchestrator import run_video
 from app.workers.render import compose_video, render_scene
+from tests.fakes import FakeArqPool
 
 models.ALLOW_MODEL_REQUESTS = False
 
@@ -29,32 +30,6 @@ class _FakeRenderer:
     async def render(self, *, job_id, render_in, input_dir, output_dir):  # type: ignore[no-untyped-def]
         (output_dir / "scene.mp4").write_bytes(b"\x00FAKEMP4")
         return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
-
-
-class _FakeArqJob:
-    def __init__(self, value: object = None, exc: BaseException | None = None) -> None:
-        self._value = value
-        self._exc = exc
-
-    async def result(self, timeout: float | None = None) -> object:
-        if self._exc is not None:
-            raise self._exc
-        return self._value
-
-
-class _FakeArqPool:
-    """Runs render/compose jobs in-process at enqueue time (eager), capturing any
-    exception to re-raise from result() — mirrors arq's enqueue+await contract."""
-
-    def __init__(self, fns):  # type: ignore[no-untyped-def]
-        self._fns = fns
-
-    async def enqueue_job(self, function, *args, _queue_name=None):  # type: ignore[no-untyped-def]
-        try:
-            value = await self._fns[function]({}, *args)
-            return _FakeArqJob(value=value)
-        except Exception as exc:
-            return _FakeArqJob(exc=exc)
 
 
 def _wav(seconds: float, framerate: int = 24000) -> bytes:
@@ -136,18 +111,34 @@ def stub_tts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeTTSClient:
 
 
 @pytest.fixture
-def stub_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _FakeArqPool:
+def stub_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeArqPool:
     """Stub the render-pool seams + provide a ctx-injectable fake Arq pool.
     Shares tmp_path with stub_tts so render reads the audio tts wrote."""
+    from app.llm.manim_agent import ManimCodeResult
+    from app.llm.manim_critic import CritiqueResult
+
     monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
-    monkeypatch.setattr("app.workers.render.get_renderer", lambda: _FakeRenderer())
+    monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer())
+
+    async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+        return ManimCodeResult(
+            code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): self.wait(1)\n",
+            cost_usd=Decimal("0.01"),
+            model=model,
+        )
+
+    async def fake_critique(*, code, duration_seconds):  # type: ignore[no-untyped-def]
+        return CritiqueResult(ok=True, issues=[], cost_usd=Decimal("0"))
+
+    monkeypatch.setattr("app.workers.render.generate_manim_code", fake_codegen)
+    monkeypatch.setattr("app.workers.render.critique", fake_critique)
 
     async def fake_runner(*, image, command, input_dir, output_dir, limits, name):  # type: ignore[no-untyped-def]
         (output_dir / "final.mp4").write_bytes(b"\x00FINAL")
         return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
 
     monkeypatch.setattr("app.workers.render.get_sandbox_runner", lambda: fake_runner)
-    return _FakeArqPool({"render_scene": render_scene, "compose_video": compose_video})
+    return FakeArqPool({"render_scene": render_scene, "compose_video": compose_video})
 
 
 class TestRunVideo:
@@ -157,7 +148,7 @@ class TestRunVideo:
         job_id: int,
         overridden_agent: None,
         stub_tts: FakeTTSClient,
-        stub_render: _FakeArqPool,
+        stub_render: FakeArqPool,
     ) -> None:
         await run_video({"redis": stub_render}, job_id)
 
@@ -176,7 +167,7 @@ class TestRunVideo:
         job_id: int,
         overridden_agent: None,
         stub_tts: FakeTTSClient,
-        stub_render: _FakeArqPool,
+        stub_render: FakeArqPool,
     ) -> None:
         await run_video({"redis": stub_render}, job_id)
         scenes = await SceneRepo(clean_db).list_by_job(job_id)
@@ -215,7 +206,7 @@ class TestRunVideo:
         job_id: int,
         overridden_agent: None,
         stub_tts: FakeTTSClient,
-        stub_render: _FakeArqPool,
+        stub_render: FakeArqPool,
     ) -> None:
         """Spec §13: LLM spend (script + cost + scenes) is committed BEFORE the
         SCRIPT_READY transition is attempted, so a cancel race cannot wipe the
@@ -241,7 +232,7 @@ class TestRunVideo:
         overridden_agent: None,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
-        stub_render: _FakeArqPool,
+        stub_render: FakeArqPool,
     ) -> None:
         fake = FakeTTSClient(seconds=5.0)
         monkeypatch.setattr("app.workers.orchestrator.get_tts_client", lambda: fake)
@@ -294,7 +285,7 @@ class TestRunVideo:
         overridden_agent: None,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
-        stub_render: _FakeArqPool,
+        stub_render: FakeArqPool,
     ) -> None:
         repo = JobRepo(clean_db)
         from app.llm.script_agent import generate_script
@@ -347,6 +338,29 @@ class TestRunVideo:
         assert job.error["type"] == "tts_error"
         assert await AssetRepo(clean_db).audio_scene_ids(job_id) == set()
 
+    async def test_render_pool_down_fails_fast(
+        self,
+        clean_db: AsyncSession,
+        job_id: int,
+        overridden_agent: None,
+        stub_tts: FakeTTSClient,
+    ) -> None:
+        """No live render worker (health key absent) must fail the job immediately
+        with an actionable error — not hang until the render-result timeout."""
+        pool = FakeArqPool({}, alive=False)
+
+        await run_video({"redis": pool}, job_id)
+
+        job = await JobRepo(clean_db).get(job_id)
+        assert job is not None
+        assert job.status == JobStatus.FAILED.value
+        assert job.error is not None
+        assert job.error["type"] == "render_error"
+        assert "render worker" in job.error["message"]
+        # Nothing was enqueued: every scene is still pending.
+        scenes = await SceneRepo(clean_db).list_by_job(job_id)
+        assert all(s.status == SceneStatus.PENDING.value for s in scenes)
+
     async def test_render_failure_fails_job(
         self,
         clean_db: AsyncSession,
@@ -356,13 +370,29 @@ class TestRunVideo:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        from app.llm.manim_agent import ManimCodeResult
+        from app.llm.manim_critic import CritiqueResult
+
         class _FailingRenderer:
             async def render(self, *, job_id, render_in, input_dir, output_dir):  # type: ignore[no-untyped-def]
                 return RunResult(exit_code=1, stdout="", stderr="bad geometry", timed_out=False)
 
         monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
-        monkeypatch.setattr("app.workers.render.get_renderer", lambda: _FailingRenderer())
-        pool = _FakeArqPool({"render_scene": render_scene, "compose_video": compose_video})
+        monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FailingRenderer())
+
+        async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+            return ManimCodeResult(
+                code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass",
+                cost_usd=Decimal("0"),
+                model=model,
+            )
+
+        async def fake_critique(*, code, duration_seconds):  # type: ignore[no-untyped-def]
+            return CritiqueResult(ok=True, issues=[], cost_usd=Decimal("0"))
+
+        monkeypatch.setattr("app.workers.render.generate_manim_code", fake_codegen)
+        monkeypatch.setattr("app.workers.render.critique", fake_critique)
+        pool = FakeArqPool({"render_scene": render_scene, "compose_video": compose_video})
 
         await run_video({"redis": pool}, job_id)
 
@@ -371,4 +401,50 @@ class TestRunVideo:
         assert job.status == JobStatus.FAILED.value
         assert job.error is not None
         assert job.error["type"] == "render_error"
-        assert job.error["scene_index"] == 0
+
+    async def test_partial_failure_marks_partially_failed(
+        self,
+        clean_db: AsyncSession,
+        job_id: int,
+        overridden_agent: None,
+        stub_tts: FakeTTSClient,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.llm.manim_agent import ManimCodeResult
+        from app.llm.manim_critic import CritiqueResult
+
+        class _OneFails:
+            async def render(self, *, job_id, render_in, input_dir, output_dir):  # type: ignore[no-untyped-def]
+                if render_in.scene_index == 1:
+                    return RunResult(exit_code=1, stdout="", stderr="boom", timed_out=False)
+                (output_dir / "scene.mp4").write_bytes(b"\x00OK")
+                return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
+
+        monkeypatch.setattr("app.workers.render.get_storage", lambda: LocalStorage(tmp_path))
+        monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _OneFails())
+
+        async def fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+            return ManimCodeResult(
+                code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): pass",
+                cost_usd=Decimal("0"),
+                model=model,
+            )
+
+        async def fake_critique(*, code, duration_seconds):  # type: ignore[no-untyped-def]
+            return CritiqueResult(ok=True, issues=[], cost_usd=Decimal("0"))
+
+        monkeypatch.setattr("app.workers.render.generate_manim_code", fake_codegen)
+        monkeypatch.setattr("app.workers.render.critique", fake_critique)
+        pool = FakeArqPool({"render_scene": render_scene, "compose_video": compose_video})
+
+        await run_video({"redis": pool}, job_id)
+
+        job = await JobRepo(clean_db).get(job_id)
+        assert job is not None
+        assert job.status == JobStatus.PARTIALLY_FAILED.value
+        assert job.output_url is None
+        scenes = await SceneRepo(clean_db).list_by_job(job_id)
+        statuses = sorted(s.status for s in scenes)
+        assert SceneStatus.FAILED.value in statuses
+        assert SceneStatus.DONE.value in statuses
