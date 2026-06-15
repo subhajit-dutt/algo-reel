@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     render_result_timeout_seconds: int = Field(default=900, gt=0)
     compose_result_timeout_seconds: int = Field(default=300, gt=0)
 
+    manim_image: str = "algoreel-manim:m5"
+    llm_codegen_model: str = "anthropic/claude-sonnet-4.6"
+    llm_codegen_retry_model: str = "anthropic/claude-opus-4.8"
+    llm_critic_model: str = "anthropic/claude-haiku-4.5"
+    llm_codegen_max_tokens: int = Field(default=8000, gt=0)
+    manim_max_attempts: int = Field(default=3, gt=0)
+    manim_render_timeout_seconds: int = Field(default=300, gt=0)
+    manim_tmpfs_size: str = "512m"
+    max_render_cost_usd: Decimal = Field(default=Decimal("1.50"), gt=Decimal(0))
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

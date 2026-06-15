@@ -40,3 +40,21 @@ def test_render_settings_load() -> None:
     assert s.render_timeout_seconds == 120
     assert s.render_result_timeout_seconds == 900
     assert s.compose_result_timeout_seconds == 300
+
+
+def test_manim_settings_load() -> None:
+    from decimal import Decimal
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    s = get_settings()
+    assert s.manim_image == "algoreel-manim:m5"
+    assert s.llm_codegen_model == "anthropic/claude-sonnet-4.6"
+    assert s.llm_codegen_retry_model == "anthropic/claude-opus-4.8"
+    assert s.llm_critic_model == "anthropic/claude-haiku-4.5"
+    assert s.llm_codegen_max_tokens == 8000
+    assert s.manim_max_attempts == 3
+    assert s.manim_render_timeout_seconds == 300
+    assert s.manim_tmpfs_size == "512m"
+    assert s.max_render_cost_usd == Decimal("1.50")
