@@ -79,11 +79,19 @@ class ManimRenderer:
             "+faststart",
             "/out/scene.mp4",
         ]
+        # The manim image does not ship ffmpeg; use the dedicated render image for mux.
+        mux_limits = SandboxLimits(
+            memory=s.render_memory,
+            cpus=s.render_cpus,
+            pids_limit=s.render_pids_limit,
+            timeout_seconds=s.render_timeout_seconds,
+            user=s.render_user,
+        )
         return await runner(
-            image=s.manim_image,
+            image=s.render_image,
             command=mux_cmd,
             input_dir=input_dir,
             output_dir=output_dir,
-            limits=limits,
+            limits=mux_limits,
             name=f"algoreel-mux-{job_id}-{render_in.scene_index}",
         )

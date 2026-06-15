@@ -110,7 +110,11 @@ curl -sS http://localhost:8000/api/videos/42 \
 
 `status` is one of `queued, scripting, script_ready, rendering, composing, done, failed, cancelled, partially_failed`.
 
+A job reaches `partially_failed` when at least one scene render fails but others succeed. Call `POST /api/videos/{id}/resume` to retry only the failed scenes without restarting the whole pipeline.
+
 `error` is populated on `failed` jobs, e.g. `{"type": "budget_exceeded", "reason": "scene_count", "value": "20"}`.
+
+Internal assets stored per scene include `audio`, `scene_mp4`, `final_mp4`, `image`, and `manim_log`. The `manim_log` asset captures the raw Manim stderr for each scene and is used for debugging failed Manim renders; it is not exposed in the public API response.
 
 **Errors**
 
