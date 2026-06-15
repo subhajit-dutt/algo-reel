@@ -83,3 +83,15 @@ class TestEnforceBudget:
             max_cost=Decimal("0.10"),
             max_scenes=12,
         )
+
+
+def test_enforce_render_budget_raises_over_cap() -> None:
+    from decimal import Decimal
+
+    import pytest
+
+    from app.llm.budget import RenderBudgetExceededError, enforce_render_budget
+
+    enforce_render_budget(spent=Decimal("1.40"), cap=Decimal("1.50"))  # under cap: no raise
+    with pytest.raises(RenderBudgetExceededError):
+        enforce_render_budget(spent=Decimal("1.60"), cap=Decimal("1.50"))

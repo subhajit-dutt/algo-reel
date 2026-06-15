@@ -31,3 +31,15 @@ def enforce_budget(
     drift = abs(script.total_duration - target_seconds) / target_seconds
     if drift > _MAX_DRIFT:
         raise BudgetExceededError("duration_drift", drift)
+
+
+class RenderBudgetExceededError(Exception):
+    def __init__(self, spent: Decimal, cap: Decimal) -> None:
+        super().__init__(f"render budget exceeded: spent={spent} cap={cap}")
+        self.spent = spent
+        self.cap = cap
+
+
+def enforce_render_budget(*, spent: Decimal, cap: Decimal) -> None:
+    if spent > cap:
+        raise RenderBudgetExceededError(spent, cap)
