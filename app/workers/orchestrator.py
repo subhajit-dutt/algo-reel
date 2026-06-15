@@ -1,6 +1,6 @@
 import asyncio
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from app.config import get_settings
 from app.db.redis import create_redis_client
@@ -268,13 +268,16 @@ async def _voice_all_scenes(
     await session.commit()
 
 
+_RenderOutcome = Literal["pool_down", "all_failed", "partial", "all_done"]
+
+
 async def _render_all_scenes(
     ctx: dict[str, Any],
     session: Any,
     job_id: int,
     job_repo: JobRepo,
     scene_repo: SceneRepo,
-) -> str:
+) -> _RenderOutcome:
     await _assert_not_terminal(job_repo, job_id)
     # Commit the RENDERING transition before fanning out: the render-pool workers
     # update the jobs row on their own sessions, so the orchestrator must not hold
