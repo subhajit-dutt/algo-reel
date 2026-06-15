@@ -60,3 +60,36 @@ class TestManimFewShot:
         assert all(scene.duration_seconds > 0 for scene in script.scenes)
         total = sum(scene.duration_seconds for scene in script.scenes)
         assert abs(total - script.total_duration) <= 0.2 * script.total_duration
+
+
+def test_codegen_prompt_pins_scene_name_and_constraints() -> None:
+    from app.llm.prompts import MANIM_CODEGEN_SYSTEM_PROMPT, build_codegen_prompt
+
+    assert "GeneratedScene" in MANIM_CODEGEN_SYSTEM_PROMPT
+    msg = build_codegen_prompt(
+        visual_prompt="A right triangle fades in",
+        narration="Start with a right triangle.",
+        duration_seconds="12.00",
+    )
+    assert "12.00" in msg
+    assert "A right triangle fades in" in msg
+
+
+def test_codegen_prompt_includes_retry_context() -> None:
+    from app.llm.prompts import build_codegen_prompt
+
+    msg = build_codegen_prompt(
+        visual_prompt="v",
+        narration="n",
+        duration_seconds="5.00",
+        prev_code="class GeneratedScene(Scene):\n    pass",
+        stderr="NameError: name 'Squarea' is not defined",
+    )
+    assert "Squarea" in msg
+    assert "GeneratedScene(Scene)" in msg
+
+
+def test_critic_prompt_exists() -> None:
+    from app.llm.prompts import MANIM_CRITIC_SYSTEM_PROMPT
+
+    assert "GeneratedScene" in MANIM_CRITIC_SYSTEM_PROMPT

@@ -113,3 +113,52 @@ def build_user_prompt(
         f"Here is a well-formed VideoScript for this renderer:\n"
         f"{_MANIM_FEWSHOT_JSON}"
     )
+
+
+MANIM_CODEGEN_SYSTEM_PROMPT = """You write Manim Community Edition (v0.18+) Python code for one short tutorial scene.
+
+Hard requirements:
+- Output ONLY a complete, self-contained Python module. No prose, no markdown fences.
+- Define exactly one Scene subclass named `GeneratedScene` with a `construct(self)` method.
+- `from manim import *` at the top. Do not import anything else.
+- No file, network, OS, or subprocess access. No reading external assets.
+- The animation MUST run for approximately the given duration in seconds. Use
+  `self.play(..., run_time=...)` and `self.wait(...)` so the total runtime matches.
+- Keep it to one clear idea. Prefer Text/MarkupText, MathTex, shapes, arrows, and
+  smooth transforms in the style of 3Blue1Brown. Use a dark background.
+- Do not add audio; narration is muxed in separately.
+"""
+
+MANIM_CRITIC_SYSTEM_PROMPT = """You are a pre-render checker for Manim Community code.
+Given a Python module and a target duration, decide whether it is safe and likely to
+render. Return ok=false with specific issues if: it does not define a Scene subclass
+named `GeneratedScene`, it imports modules other than manim, it performs file/network/OS
+access, or it has obvious syntax/name errors. Otherwise ok=true.
+"""
+
+
+def build_codegen_prompt(
+    *,
+    visual_prompt: str,
+    narration: str,
+    duration_seconds: str,
+    prev_code: str | None = None,
+    stderr: str | None = None,
+) -> str:
+    base = (
+        f"Visual prompt: {visual_prompt}\n"
+        f"Narration (for timing/context, do not render as a caption verbatim): {narration}\n"
+        f"Target duration (seconds): {duration_seconds}\n"
+    )
+    if prev_code is None or stderr is None:
+        return base
+    return (
+        f"{base}\n"
+        f"The previous attempt failed. Fix it. Failing code:\n"
+        f"```python\n{prev_code}\n```\n"
+        f"Error output:\n{stderr}\n"
+    )
+
+
+def build_critic_prompt(*, code: str, duration_seconds: str) -> str:
+    return f"Target duration (seconds): {duration_seconds}\n\nCode:\n```python\n{code}\n```"
