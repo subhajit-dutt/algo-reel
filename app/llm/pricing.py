@@ -17,6 +17,14 @@ MODEL_PRICING: dict[str, Pricing] = {
         input_per_mtok=Decimal("1.00"),
         output_per_mtok=Decimal("5.00"),
     ),
+    "anthropic/claude-sonnet-4.6": Pricing(
+        input_per_mtok=Decimal("3.00"),
+        output_per_mtok=Decimal("15.00"),
+    ),
+    "anthropic/claude-opus-4.8": Pricing(
+        input_per_mtok=Decimal("5.00"),
+        output_per_mtok=Decimal("25.00"),
+    ),
 }
 
 

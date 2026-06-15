@@ -37,3 +37,16 @@ class TestComputeCost:
     def test_result_quantized_four_decimals(self) -> None:
         cost = compute_cost("anthropic/claude-haiku-4.5", input_tokens=1234, output_tokens=567)
         assert cost.as_tuple().exponent == -4
+
+
+def test_sonnet_codegen_pricing() -> None:
+    # 1M input + 1M output at $3 / $15
+    assert compute_cost(
+        "anthropic/claude-sonnet-4.6", input_tokens=1_000_000, output_tokens=1_000_000
+    ) == Decimal("18.0000")
+
+
+def test_opus_retry_pricing() -> None:
+    assert compute_cost(
+        "anthropic/claude-opus-4.8", input_tokens=1_000_000, output_tokens=1_000_000
+    ) == Decimal("30.0000")
