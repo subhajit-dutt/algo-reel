@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 
+from app.domain.enums import Renderer
 from app.render.sandbox import RunResult
 
 
@@ -11,6 +12,8 @@ class RenderInput:
     scene_index: int
     text: str
     duration: Decimal
+    visual_prompt: str = ""
+    code: str = ""
 
 
 class RenderError(Exception):
@@ -26,8 +29,12 @@ class SceneRenderer(Protocol):
     ) -> RunResult: ...
 
 
-def get_renderer() -> SceneRenderer:
-    # Lazy import avoids a base <-> trivial import cycle (trivial imports RenderInput).
+def get_renderer(renderer: Renderer) -> SceneRenderer:
+    # Lazy imports avoid base <-> concrete-renderer import cycles.
+    if renderer is Renderer.MANIM:
+        from app.render.manim import ManimRenderer
+
+        return ManimRenderer()
     from app.render.trivial import TrivialRenderer
 
     return TrivialRenderer()

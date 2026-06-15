@@ -1,6 +1,6 @@
 import asyncio
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from app.config import get_settings
 from app.db.redis import create_redis_client
@@ -18,9 +18,13 @@ from app.services.progress_publisher import ProgressPublisher
 from app.storage import get_storage
 from app.tts.client import get_tts_client
 from app.tts.synthesizer import synthesize_scene
-from app.workers.queues import RENDER_QUEUE
+from app.workers.queues import RENDER_POOL_HEALTH_KEY, RENDER_QUEUE
 
 log = get_logger("workers.orchestrator")
+
+_RENDER_POOL_DOWN_MSG = (
+    f"no live render worker on the '{RENDER_QUEUE}' queue — start one with `make render-worker`"
+)
 
 
 class _AbortedError(Exception):
@@ -29,13 +33,6 @@ class _AbortedError(Exception):
 
 class _SceneTTSError(Exception):
     def __init__(self, scene_index: int, message: str) -> None:
-        super().__init__(message)
-        self.scene_index = scene_index
-        self.message = message
-
-
-class _SceneRenderError(Exception):
-    def __init__(self, scene_index: int | None, message: str) -> None:
         super().__init__(message)
         self.scene_index = scene_index
         self.message = message
@@ -146,16 +143,34 @@ async def _execute(
         current = JobStatus.RENDERING
 
     if current == JobStatus.RENDERING:
-        try:
-            await _render_all_scenes(ctx, session, job_id, job_repo, scene_repo)
-        except _SceneRenderError as e:
+        outcome = await _render_all_scenes(ctx, session, job_id, job_repo, scene_repo)
+        if outcome == "pool_down":
             await _fail(
                 job_repo,
                 publisher,
                 job_id,
                 JobStatus.RENDERING,
-                {"type": "render_error", "scene_index": e.scene_index, "message": e.message},
+                {"type": "render_error", "scene_index": None, "message": _RENDER_POOL_DOWN_MSG},
             )
+            return
+        if outcome == "all_failed":
+            await _fail(
+                job_repo,
+                publisher,
+                job_id,
+                JobStatus.RENDERING,
+                {
+                    "type": "render_error",
+                    "scene_index": None,
+                    "message": "all scenes failed to render",
+                },
+            )
+            return
+        if outcome == "partial":
+            await _transition(
+                job_repo, publisher, job_id, JobStatus.RENDERING, JobStatus.PARTIALLY_FAILED
+            )
+            log.info("orchestrator.partially_failed", job_id=job_id)
             return
         await _transition(job_repo, publisher, job_id, JobStatus.RENDERING, JobStatus.COMPOSING)
         current = JobStatus.COMPOSING
@@ -253,19 +268,24 @@ async def _voice_all_scenes(
     await session.commit()
 
 
+_RenderOutcome = Literal["pool_down", "all_failed", "partial", "all_done"]
+
+
 async def _render_all_scenes(
     ctx: dict[str, Any],
     session: Any,
     job_id: int,
     job_repo: JobRepo,
     scene_repo: SceneRepo,
-) -> None:
+) -> _RenderOutcome:
     await _assert_not_terminal(job_repo, job_id)
     # Commit the RENDERING transition before fanning out: the render-pool workers
-    # update the jobs row (set_progress) on their own sessions, so the orchestrator
-    # must not hold an uncommitted row lock on it across the multi-minute gather.
+    # update the jobs row on their own sessions, so the orchestrator must not hold
+    # an uncommitted row lock across the multi-minute gather.
     await session.commit()
     pool = ctx["redis"]
+    if not await pool.exists(RENDER_POOL_HEALTH_KEY):
+        return "pool_down"
     s = get_settings()
     scenes = await scene_repo.list_by_job(job_id)
     scene_total = len(scenes)
@@ -276,15 +296,26 @@ async def _render_all_scenes(
             "render_scene", sc.id, scene_total, _queue_name=RENDER_QUEUE
         )
         if handle is None:
-            raise _SceneRenderError(sc.index, f"enqueue returned None for scene {sc.id}")
+            return "pool_down"
         handles.append(handle)
-    try:
-        await asyncio.gather(*[h.result(timeout=s.render_result_timeout_seconds) for h in handles])
-    except Exception as exc:
-        session.expire_all()
-        refreshed = await scene_repo.list_by_job(job_id)
-        failed = next((sc for sc in refreshed if sc.status == SceneStatus.FAILED.value), None)
-        raise _SceneRenderError(failed.index if failed else None, str(exc)) from exc
+    # render_scene marks each scene DONE/FAILED and never raises for a render failure;
+    # await all (return_exceptions absorbs any stray escape — e.g. missing audio — so
+    # one bad task can't crash the orchestrator and strand the job in RENDERING), then
+    # classify by the persisted scene status.
+    await asyncio.gather(
+        *[h.result(timeout=s.render_result_timeout_seconds) for h in handles],
+        return_exceptions=True,
+    )
+    session.expire_all()
+    refreshed = await scene_repo.list_by_job(job_id)
+    done = sum(1 for sc in refreshed if sc.status == SceneStatus.DONE.value)
+    # Any scene that isn't DONE failed — FAILED, or left non-terminal by a stray escape.
+    failed = scene_total - done
+    if failed == 0:
+        return "all_done"
+    if done == 0:
+        return "all_failed"
+    return "partial"
 
 
 async def _compose(ctx: dict[str, Any], job_id: int) -> None:

@@ -1,4 +1,4 @@
-.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm smoke-tts render-image render-worker smoke-render frontend-install frontend-build
+.PHONY: install up down dev worker migrate revision test fmt lint typecheck clean smoke-llm smoke-tts render-image render-worker smoke-render render-image-manim smoke-manim frontend-install frontend-build
 
 install:
 	uv sync
@@ -50,8 +50,14 @@ render-image:
 render-worker:
 	uv run arq app.workers.arq_settings.RenderWorkerSettings
 
+render-image-manim:
+	docker build -t algoreel-manim:m5 -f docker/manim/Dockerfile .
+
 smoke-render:
 	ALGOREEL_ALLOW_LIVE_RENDER=1 uv run python -m scripts.smoke_render
+
+smoke-manim:
+	ALGOREEL_ALLOW_LIVE_RENDER=1 uv run python -m scripts.smoke_manim
 
 frontend-install:
 	cd frontend && npm install

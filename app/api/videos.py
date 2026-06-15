@@ -6,7 +6,10 @@ from app.schemas.job import CreateJobRequest, JobResponse
 from app.services.job_service import (
     JobNotCancellableError,
     JobNotFoundError,
+    JobNotResumableError,
     JobService,
+    OrchestratorPoolDownError,
+    RenderPoolDownError,
 )
 
 router = APIRouter(
@@ -21,7 +24,16 @@ async def create_video(
     req: CreateJobRequest,
     service: JobService = Depends(get_job_service),
 ) -> JobResponse:
-    job = await service.create_job(req)
+    try:
+        job = await service.create_job(req)
+    except OrchestratorPoolDownError as e:
+        # Retry-After matches the worker's health_check_interval: a restarting
+        # worker re-publishes its health key within one interval.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+            headers={"Retry-After": "60"},
+        ) from e
     return JobResponse.model_validate(job)
 
 
@@ -34,6 +46,26 @@ async def get_video(
         job = await service.get_job(job_id)
     except JobNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    return JobResponse.model_validate(job)
+
+
+@router.post("/{job_id}/resume", response_model=JobResponse)
+async def resume_video(
+    job_id: int,
+    service: JobService = Depends(get_job_service),
+) -> JobResponse:
+    try:
+        job = await service.resume_job(job_id)
+    except JobNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except JobNotResumableError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    except (OrchestratorPoolDownError, RenderPoolDownError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+            headers={"Retry-After": "60"},
+        ) from e
     return JobResponse.model_validate(job)
 
 

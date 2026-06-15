@@ -54,3 +54,8 @@ class SceneRepo:
         await self._session.execute(
             update(Scene).where(Scene.id == scene_id).values(output_url=url)
         )
+
+    async def set_manim_code(self, scene_id: int, code: str) -> None:
+        await self._session.execute(
+            update(Scene).where(Scene.id == scene_id).values(manim_code=code)
+        )

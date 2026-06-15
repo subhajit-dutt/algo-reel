@@ -11,7 +11,7 @@ _ALLOWED_JOB_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.DONE: frozenset(),
     JobStatus.FAILED: frozenset(),
     JobStatus.CANCELLED: frozenset(),
-    JobStatus.PARTIALLY_FAILED: frozenset(),
+    JobStatus.PARTIALLY_FAILED: frozenset({JobStatus.RENDERING}),
 }
 
 TERMINAL_JOB_STATUSES: frozenset[JobStatus] = frozenset(

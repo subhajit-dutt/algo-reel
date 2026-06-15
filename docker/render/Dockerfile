@@ -1,4 +1,5 @@
-# Trusted-command FFmpeg sandbox image for M4. M5 adds manim to this same image.
+# Trusted-command FFmpeg sandbox image: M4 trivial renders, M5 compose, and the M5
+# manim audio-mux step. Manim itself runs in the separate docker/manim image.
 FROM alpine:3.20
 
 RUN apk add --no-cache ffmpeg ttf-dejavu \

@@ -32,7 +32,6 @@ class TestJobStatusTransitions:
             JobStatus.DONE,
             JobStatus.FAILED,
             JobStatus.CANCELLED,
-            JobStatus.PARTIALLY_FAILED,
         ],
     )
     def test_terminal_states_have_no_outgoing_edges(self, src: JobStatus) -> None:
@@ -47,3 +46,20 @@ class TestJobStatusTransitions:
     def test_idempotent_same_state_is_disallowed(self) -> None:
         with pytest.raises(IllegalStateTransitionError):
             assert_transition(JobStatus.RENDERING, JobStatus.RENDERING)
+
+
+def test_partially_failed_can_resume_to_rendering() -> None:
+    from app.domain.enums import JobStatus
+    from app.domain.state_machine import assert_transition
+
+    assert_transition(JobStatus.PARTIALLY_FAILED, JobStatus.RENDERING)  # no raise
+
+
+def test_partially_failed_still_terminal_for_other_transitions() -> None:
+    import pytest
+
+    from app.domain.enums import JobStatus
+    from app.domain.state_machine import IllegalStateTransitionError, assert_transition
+
+    with pytest.raises(IllegalStateTransitionError):
+        assert_transition(JobStatus.PARTIALLY_FAILED, JobStatus.DONE)

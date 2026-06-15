@@ -49,3 +49,43 @@ async def test_start_then_fail(clean_db: AsyncSession, scene_id: int) -> None:
     row = (await clean_db.execute(select(Render).where(Render.id == render.id))).scalar_one()
     assert row.status == "failed"
     assert row.stderr == "boom"
+
+
+async def test_mark_succeeded_records_cost(clean_db) -> None:  # type: ignore[no-untyped-def]
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.db.models import Render
+    from app.domain.enums import Renderer
+    from app.domain.script import Scene as DomainScene
+    from app.domain.script import VideoScript
+    from app.repositories.job_repo import JobRepo
+    from app.repositories.render_repo import RenderRepo
+    from app.repositories.scene_repo import SceneRepo
+
+    job = await JobRepo(clean_db).create(
+        user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=60
+    )
+    await clean_db.flush()
+    job_id = job.id
+    scenes = await SceneRepo(clean_db).bulk_insert_from_script(
+        job_id,
+        VideoScript(
+            title="t",
+            renderer=Renderer.MANIM,
+            voice="alloy",
+            total_duration=5.0,
+            scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=5.0)],
+        ),
+    )
+    repo = RenderRepo(clean_db)
+    r = await repo.start_attempt(scenes[0].id, attempt=1)
+    render_id = r.id
+    await repo.mark_succeeded(render_id, duration_ms=10, cost_usd=Decimal("0.2000"))
+    await clean_db.commit()
+
+    clean_db.expire_all()
+    row = (await clean_db.execute(select(Render).where(Render.id == render_id))).scalar_one()
+    assert row.cost_usd == Decimal("0.2000")
+    assert await repo.total_cost_for_job(job_id) == Decimal("0.2000")

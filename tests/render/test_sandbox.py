@@ -84,3 +84,52 @@ async def test_timeout_kills_and_flags(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert result.timed_out is True
     assert result.exit_code == 124
     assert any(c[:2] == ["docker", "kill"] for c in calls)
+
+
+def test_build_argv_uses_configurable_tmpfs_and_env() -> None:
+    from pathlib import Path
+
+    from app.render.sandbox import SandboxLimits, _build_argv
+
+    limits = SandboxLimits(
+        memory="2g",
+        cpus="1.0",
+        pids_limit=256,
+        timeout_seconds=300,
+        user="10001:10001",
+        tmpfs_size="512m",
+        env=(("HOME", "/tmp"), ("XDG_CACHE_HOME", "/tmp/.cache")),
+    )
+    argv = _build_argv(
+        image="algoreel-manim:m5",
+        command=["manim", "--version"],
+        input_dir=Path("/in"),
+        output_dir=Path("/out"),
+        limits=limits,
+        name="x",
+    )
+    assert "--network=none" in argv  # hardening preserved
+    assert "/tmp:rw,size=512m" in argv
+    assert argv[argv.index("-e") + 1] == "HOME=/tmp"
+    joined = " ".join(argv)
+    assert "HOME=/tmp" in joined and "XDG_CACHE_HOME=/tmp/.cache" in joined
+
+
+def test_build_argv_defaults_preserve_m4_behavior() -> None:
+    from pathlib import Path
+
+    from app.render.sandbox import SandboxLimits, _build_argv
+
+    limits = SandboxLimits(
+        memory="2g", cpus="1.0", pids_limit=256, timeout_seconds=120, user="10001:10001"
+    )
+    argv = _build_argv(
+        image="algoreel-render:m4",
+        command=["ffmpeg"],
+        input_dir=Path("/in"),
+        output_dir=Path("/out"),
+        limits=limits,
+        name="x",
+    )
+    assert "/tmp:rw,size=64m" in argv
+    assert "-e" not in argv  # no env by default

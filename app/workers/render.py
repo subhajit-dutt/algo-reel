@@ -1,12 +1,17 @@
+import shutil
 import tempfile
 import time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
 from app.db.redis import create_redis_client
 from app.db.session import session_scope
-from app.domain.enums import AssetKind, JobStatus, SceneStatus
+from app.domain.enums import AssetKind, JobStatus, Renderer, SceneStatus
+from app.llm.budget import RenderBudgetExceededError, enforce_render_budget
+from app.llm.manim_agent import generate_manim_code
+from app.llm.manim_critic import critique
 from app.logging import get_logger
 from app.render.base import RenderError, RenderInput, get_renderer
 from app.render.sandbox import SandboxLimits, get_sandbox_runner
@@ -23,7 +28,6 @@ log = get_logger("workers.render")
 
 async def render_scene(ctx: dict[str, Any], scene_id: int, scene_total: int) -> None:
     storage = get_storage()
-    renderer = get_renderer()
     redis = create_redis_client()
     publisher = ProgressPublisher(redis)
     try:
@@ -40,6 +44,10 @@ async def render_scene(ctx: dict[str, Any], scene_id: int, scene_total: int) -> 
             if scene.status == SceneStatus.DONE.value:
                 log.info("render.skip_done", scene_id=scene_id)
                 return
+            job = await job_repo.get(scene.job_id)
+            if job is None:
+                log.warning("render.skip_missing_job", scene_id=scene_id)
+                return
 
             audio_key = await asset_repo.storage_key_for(scene_id, AssetKind.AUDIO)
             audio_bytes = await storage.get(audio_key)
@@ -53,7 +61,6 @@ async def render_scene(ctx: dict[str, Any], scene_id: int, scene_total: int) -> 
                 (input_dir / "audio.wav").write_bytes(audio_bytes)
 
                 await scene_repo.update_status(scene_id, SceneStatus.RENDERING)
-                render = await render_repo.start_attempt(scene_id, attempt=ctx.get("job_try", 1))
                 progress = {
                     "current_scene": scene.index + 1,
                     "total": scene_total,
@@ -71,51 +78,225 @@ async def render_scene(ctx: dict[str, Any], scene_id: int, scene_total: int) -> 
                     )
                 )
 
-                try:
-                    started = time.monotonic()
-                    result = await renderer.render(
-                        job_id=scene.job_id,
-                        render_in=RenderInput(
-                            scene_index=scene.index,
-                            text=scene.narration,
-                            duration=scene.duration_seconds,
-                        ),
-                        input_dir=input_dir,
-                        output_dir=output_dir,
+                if Renderer(job.renderer) is Renderer.MANIM:
+                    await _render_manim_scene(
+                        session,
+                        scene,
+                        storage,
+                        scene_repo,
+                        asset_repo,
+                        render_repo,
+                        input_dir,
+                        output_dir,
                     )
-                    duration_ms = int((time.monotonic() - started) * 1000)
-                    mp4 = output_dir / "scene.mp4"
-                    if (
-                        result.exit_code != 0
-                        or result.timed_out
-                        or not mp4.exists()
-                        or mp4.stat().st_size == 0
-                    ):
-                        raise RenderError(scene.index, result.stderr or "render produced no output")
-                    data = mp4.read_bytes()
-                    key = f"video/{scene.job_id}/{scene_id}.mp4"
-                    stored = await storage.put(key, data, "video/mp4")
-                    await asset_repo.record(
-                        scene.job_id,
-                        scene_id,
-                        AssetKind.SCENE_MP4,
-                        stored.key,
-                        stored.bytes,
-                        "video/mp4",
+                else:
+                    await _render_simple_scene(
+                        session,
+                        scene,
+                        job,
+                        storage,
+                        scene_repo,
+                        asset_repo,
+                        render_repo,
+                        input_dir,
+                        output_dir,
+                        ctx,
                     )
-                    await scene_repo.set_output_url(scene_id, storage.url(key))
-                    await scene_repo.update_status(scene_id, SceneStatus.DONE)
-                    await render_repo.mark_succeeded(render.id, duration_ms=duration_ms)
-                    await session.commit()
-                except Exception as exc:
-                    stderr = exc.stderr if isinstance(exc, RenderError) else str(exc)
-                    await render_repo.mark_failed(render.id, stderr=stderr)
-                    await scene_repo.update_status(scene_id, SceneStatus.FAILED)
-                    await session.commit()
-                    log.warning("render.failed", scene_id=scene_id, stderr=stderr[:500])
-                    raise
     finally:
         await redis.aclose()
+
+
+async def _store_scene_mp4(
+    storage: Any, asset_repo: AssetRepo, scene_repo: SceneRepo, scene: Any, mp4: Path
+) -> None:
+    data = mp4.read_bytes()
+    key = f"video/{scene.job_id}/{scene.id}.mp4"
+    stored = await storage.put(key, data, "video/mp4")
+    await asset_repo.record(
+        scene.job_id, scene.id, AssetKind.SCENE_MP4, stored.key, stored.bytes, "video/mp4"
+    )
+    await scene_repo.set_output_url(scene.id, storage.url(key))
+
+
+async def _render_simple_scene(
+    session: Any,
+    scene: Any,
+    job: Any,
+    storage: Any,
+    scene_repo: SceneRepo,
+    asset_repo: AssetRepo,
+    render_repo: RenderRepo,
+    input_dir: Path,
+    output_dir: Path,
+    ctx: dict[str, Any],
+) -> None:
+    renderer = get_renderer(Renderer(job.renderer))
+    render = await render_repo.start_attempt(scene.id, attempt=ctx.get("job_try", 1))
+    try:
+        started = time.monotonic()
+        result = await renderer.render(
+            job_id=scene.job_id,
+            render_in=RenderInput(
+                scene_index=scene.index, text=scene.narration, duration=scene.duration_seconds
+            ),
+            input_dir=input_dir,
+            output_dir=output_dir,
+        )
+        duration_ms = int((time.monotonic() - started) * 1000)
+        mp4 = output_dir / "scene.mp4"
+        if result.exit_code != 0 or result.timed_out or not mp4.exists() or mp4.stat().st_size == 0:
+            raise RenderError(scene.index, result.stderr or "render produced no output")
+        await _store_scene_mp4(storage, asset_repo, scene_repo, scene, mp4)
+        await scene_repo.update_status(scene.id, SceneStatus.DONE)
+        await render_repo.mark_succeeded(render.id, duration_ms=duration_ms)
+        await session.commit()
+    except Exception as exc:
+        stderr = exc.stderr if isinstance(exc, RenderError) else str(exc)
+        await render_repo.mark_failed(render.id, stderr=stderr)
+        await scene_repo.update_status(scene.id, SceneStatus.FAILED)
+        await session.commit()
+        log.warning("render.failed", scene_id=scene.id, stderr=stderr[:500])
+        raise
+
+
+def _clear_attempt_artifacts(output_dir: Path) -> None:
+    media = output_dir / "m"
+    if media.exists():
+        shutil.rmtree(media)
+    mp4 = output_dir / "scene.mp4"
+    if mp4.exists():
+        mp4.unlink()
+
+
+async def _render_manim_scene(
+    session: Any,
+    scene: Any,
+    storage: Any,
+    scene_repo: SceneRepo,
+    asset_repo: AssetRepo,
+    render_repo: RenderRepo,
+    input_dir: Path,
+    output_dir: Path,
+) -> None:
+    s = get_settings()
+    renderer = get_renderer(Renderer.MANIM)
+    duration_str = str(scene.duration_seconds)
+    prior_cost = await render_repo.total_cost_for_job(scene.job_id)
+    loop_cost = Decimal("0")
+    code: str | None = None
+    last_stderr: str | None = None
+    last_log = ""
+
+    for attempt in range(1, s.manim_max_attempts + 1):
+        model = s.llm_codegen_model if attempt == 1 else s.llm_codegen_retry_model
+        try:
+            enforce_render_budget(spent=prior_cost + loop_cost, cap=s.max_render_cost_usd)
+        except RenderBudgetExceededError as exc:
+            last_stderr = str(exc)
+            break
+
+        try:
+            gen = await generate_manim_code(
+                visual_prompt=scene.visual_prompt,
+                narration=scene.narration,
+                duration_seconds=duration_str,
+                model=model,
+                prev_code=code,
+                stderr=last_stderr,
+            )
+            loop_cost += gen.cost_usd
+            code = gen.code
+
+            crit = await critique(code=code, duration_seconds=duration_str)
+            loop_cost += crit.cost_usd
+            if not crit.ok:
+                last_stderr = "critic: " + "; ".join(crit.issues)
+                continue
+
+            _clear_attempt_artifacts(output_dir)
+            render = await render_repo.start_attempt(scene.id, attempt=attempt)
+            started = time.monotonic()
+            result = await renderer.render(
+                job_id=scene.job_id,
+                render_in=RenderInput(
+                    scene_index=scene.index,
+                    text=scene.narration,
+                    duration=scene.duration_seconds,
+                    visual_prompt=scene.visual_prompt,
+                    code=code,
+                ),
+                input_dir=input_dir,
+                output_dir=output_dir,
+            )
+            duration_ms = int((time.monotonic() - started) * 1000)
+            last_log = (result.stdout + "\n" + result.stderr)[-8000:]
+            mp4 = output_dir / "scene.mp4"
+            if (
+                result.exit_code == 0
+                and not result.timed_out
+                and mp4.exists()
+                and mp4.stat().st_size > 0
+            ):
+                await _store_scene_mp4(storage, asset_repo, scene_repo, scene, mp4)
+                await scene_repo.set_manim_code(scene.id, code)
+                await scene_repo.update_status(scene.id, SceneStatus.DONE)
+                await render_repo.mark_succeeded(
+                    render.id, duration_ms=duration_ms, cost_usd=gen.cost_usd + crit.cost_usd
+                )
+                await job_add_cost(session, scene.job_id, loop_cost)
+                await _store_manim_log(storage, asset_repo, scene, last_log)
+                await session.commit()
+                log.info("render.manim_done", scene_id=scene.id, attempt=attempt)
+                return
+            last_stderr = result.stderr or "render produced no output"
+            await render_repo.mark_failed(
+                render.id,
+                stderr=last_stderr,
+                duration_ms=duration_ms,
+                cost_usd=gen.cost_usd + crit.cost_usd,
+            )
+            await session.commit()
+            log.warning(
+                "render.manim_attempt_failed",
+                scene_id=scene.id,
+                attempt=attempt,
+                stderr=last_stderr[:500],
+            )
+        except (
+            Exception
+        ) as exc:  # any codegen/render/storage error is a per-scene failure, never propagated
+            await session.rollback()
+            last_stderr = str(exc)
+            log.warning(
+                "render.manim_attempt_error",
+                scene_id=scene.id,
+                attempt=attempt,
+                error=str(exc)[:500],
+            )
+            continue
+
+    await job_add_cost(session, scene.job_id, loop_cost)
+    await _store_manim_log(storage, asset_repo, scene, last_log)
+    await _fail_manim_scene(session, scene_repo, scene, last_stderr or "manim attempts exhausted")
+
+
+async def _fail_manim_scene(session: Any, scene_repo: SceneRepo, scene: Any, reason: str) -> None:
+    await scene_repo.update_status(scene.id, SceneStatus.FAILED)
+    await session.commit()
+    log.warning("render.manim_failed", scene_id=scene.id, reason=reason[:500])
+
+
+async def _store_manim_log(storage: Any, asset_repo: AssetRepo, scene: Any, text: str) -> None:
+    key = f"logs/{scene.job_id}/{scene.id}.manim.log"
+    stored = await storage.put(key, text.encode(), "text/plain")
+    await asset_repo.record(
+        scene.job_id, scene.id, AssetKind.MANIM_LOG, stored.key, stored.bytes, "text/plain"
+    )
+
+
+async def job_add_cost(session: Any, job_id: int, delta: Decimal) -> None:
+    if delta > 0:
+        await JobRepo(session).add_cost(job_id, delta)
 
 
 async def compose_video(ctx: dict[str, Any], job_id: int) -> None:
