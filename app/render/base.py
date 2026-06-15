@@ -11,6 +11,8 @@ class RenderInput:
     scene_index: int
     text: str
     duration: Decimal
+    visual_prompt: str = ""
+    code: str = ""
 
 
 class RenderError(Exception):
