@@ -14,6 +14,8 @@ export TOKEN=change-me-in-real-env
 
 Inserts a `jobs` row in `queued`, enqueues the orchestrator, returns the job snapshot. Worker walks the job through `queued → scripting → script_ready → rendering → composing → done` asynchronously.
 
+Creation is rejected with `503` when no orchestrator worker is alive (arq health key `orchestrator_pool:health-check` absent — the worker refreshes it every 60 s while running). Without this guard the job would sit in `queued` forever. Start a worker with `make worker` and retry after the `Retry-After: 60` hint.
+
 ```bash
 curl -sS -X POST http://localhost:8000/api/videos \
   -H "Authorization: Bearer $TOKEN" \
@@ -61,6 +63,7 @@ curl -sS -X POST http://localhost:8000/api/videos \
 |---|---|
 | 401 | Missing/invalid bearer token |
 | 422 | Validation failure (empty prompt, bad enum, wrong duration) |
+| 503 | No live orchestrator worker consuming the queue (`Retry-After: 60`); no job row is created |
 
 ---
 
@@ -184,3 +187,27 @@ The `progress.stage` field is one of `"tts"` (per-scene narration synthesis, `st
 |---|---|
 | 401 | Missing/invalid bearer token |
 | 404 | Job id not found |
+
+---
+
+## `POST /api/videos/{id}/resume` — Resume a partially-failed job
+
+Re-queues the failed scenes of a `partially_failed` job and transitions it back to `rendering`. Only jobs in `partially_failed` status can be resumed; any other status returns 409.
+
+```bash
+curl -sS -X POST http://localhost:8000/api/videos/42/resume \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response 200** — same shape as `GET /api/videos/{id}` with `status: "rendering"`.
+
+Failed scenes are reset to `pending` and the orchestrator re-enqueues the render task.
+
+**Errors**
+
+| Status | When |
+|---|---|
+| 401 | Missing/invalid bearer token |
+| 404 | Job id not found |
+| 409 | Job is not in `partially_failed` status |
+| 503 | No live orchestrator or render worker (`Retry-After: 60`) |
