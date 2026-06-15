@@ -11,6 +11,8 @@ class SandboxLimits:
     pids_limit: int
     timeout_seconds: int
     user: str
+    tmpfs_size: str = "64m"
+    env: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,11 +54,12 @@ def _build_argv(
         "--pids-limit",
         str(limits.pids_limit),
         "--tmpfs",
-        "/tmp:rw,size=64m",
+        f"/tmp:rw,size={limits.tmpfs_size}",
         "-v",
         f"{input_dir}:/in:ro",
         "-v",
         f"{output_dir}:/out",
+        *[arg for k, v in limits.env for arg in ("-e", f"{k}={v}")],
         image,
         *command,
     ]
