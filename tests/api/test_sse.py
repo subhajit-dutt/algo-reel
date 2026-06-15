@@ -24,6 +24,7 @@ from app.services.progress_publisher import ProgressPublisher
 from app.storage import LocalStorage
 from app.workers.orchestrator import run_video
 from app.workers.render import compose_video, render_scene
+from tests.fakes import FakeArqPool
 
 
 @pytest_asyncio.fixture
@@ -218,7 +219,25 @@ class TestSseEvents:
                 (output_dir / "scene.mp4").write_bytes(b"\x00FAKEMP4")
                 return RunResult(exit_code=0, stdout="", stderr="", timed_out=False)
 
-        monkeypatch.setattr("app.workers.render.get_renderer", lambda: _FakeRenderer())
+        monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer())
+
+        from decimal import Decimal
+
+        from app.llm.manim_agent import ManimCodeResult
+        from app.llm.manim_critic import CritiqueResult
+
+        async def _fake_codegen(*, visual_prompt, narration, duration_seconds, model, prev_code=None, stderr=None):  # type: ignore[no-untyped-def]
+            return ManimCodeResult(
+                code="from manim import *\n\nclass GeneratedScene(Scene):\n    def construct(self): self.wait(1)\n",
+                cost_usd=Decimal("0.01"),
+                model=model,
+            )
+
+        async def _fake_critique(*, code, duration_seconds):  # type: ignore[no-untyped-def]
+            return CritiqueResult(ok=True, issues=[], cost_usd=Decimal("0"))
+
+        monkeypatch.setattr("app.workers.render.generate_manim_code", _fake_codegen)
+        monkeypatch.setattr("app.workers.render.critique", _fake_critique)
 
         async def _fake_runner(*, image, command, input_dir, output_dir, limits, name):  # type: ignore[no-untyped-def]
             (output_dir / "final.mp4").write_bytes(b"\x00FINAL")
@@ -226,27 +245,7 @@ class TestSseEvents:
 
         monkeypatch.setattr("app.workers.render.get_sandbox_runner", lambda: _fake_runner)
 
-        class _Job:
-            def __init__(self, value=None, exc=None):  # type: ignore[no-untyped-def]
-                self._value = value
-                self._exc = exc
-
-            async def result(self, timeout=None):  # type: ignore[no-untyped-def]
-                if self._exc is not None:
-                    raise self._exc
-                return self._value
-
-        class _Pool:
-            def __init__(self, fns):  # type: ignore[no-untyped-def]
-                self._fns = fns
-
-            async def enqueue_job(self, function, *args, _queue_name=None):  # type: ignore[no-untyped-def]
-                try:
-                    return _Job(value=await self._fns[function]({}, *args))
-                except Exception as exc:
-                    return _Job(exc=exc)
-
-        pool = _Pool({"render_scene": render_scene, "compose_video": compose_video})
+        pool = FakeArqPool({"render_scene": render_scene, "compose_video": compose_video})
 
         repo = JobRepo(clean_db)
         job = await repo.create(
