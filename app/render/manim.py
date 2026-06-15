@@ -86,7 +86,7 @@ class ManimRenderer:
             "+faststart",
             "/out/scene.mp4",
         ]
-        # The manim image does not ship ffmpeg; use the dedicated render image for mux.
+        # Mux on the lean alpine render image (ffmpeg on PATH) rather than the heavy manim image.
         mux_limits = SandboxLimits(
             memory=s.render_memory,
             cpus=s.render_cpus,
