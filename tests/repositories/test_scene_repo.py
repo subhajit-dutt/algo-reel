@@ -126,3 +126,29 @@ async def test_get_and_set_output_url(clean_db: AsyncSession) -> None:
     assert got.output_url == "file:///x/scene.mp4"
     assert got.status == SceneStatus.PENDING.value
     assert await repo.get(999999) is None
+
+
+async def test_set_manim_code(clean_db) -> None:  # type: ignore[no-untyped-def]
+    from app.domain.enums import Renderer
+    from app.domain.script import Scene as DomainScene
+    from app.domain.script import VideoScript
+    from app.repositories.job_repo import JobRepo
+    from app.repositories.scene_repo import SceneRepo
+
+    job = await JobRepo(clean_db).create(
+        user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=60
+    )
+    await clean_db.flush()
+    scenes = await SceneRepo(clean_db).bulk_insert_from_script(
+        job.id,
+        VideoScript(
+            title="t", renderer=Renderer.MANIM, voice="alloy", total_duration=5.0,
+            scenes=[DomainScene(index=0, narration="n", visual_prompt="v", duration_seconds=5.0)],
+        ),
+    )
+    sid = scenes[0].id
+    await SceneRepo(clean_db).set_manim_code(sid, "code")
+    await clean_db.commit()
+    clean_db.expire_all()
+    scene = await SceneRepo(clean_db).get(sid)
+    assert scene is not None and scene.manim_code == "code"
