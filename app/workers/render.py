@@ -49,8 +49,20 @@ async def render_scene(ctx: dict[str, Any], scene_id: int, scene_total: int) -> 
                 log.warning("render.skip_missing_job", scene_id=scene_id)
                 return
 
-            audio_key = await asset_repo.storage_key_for(scene_id, AssetKind.AUDIO)
-            audio_bytes = await storage.get(audio_key)
+            try:
+                audio_key = await asset_repo.storage_key_for(scene_id, AssetKind.AUDIO)
+                audio_bytes = await storage.get(audio_key)
+            except Exception as exc:
+                # Missing audio asset row or storage file is a per-scene failure, not a
+                # crash: mark FAILED, record the failed attempt, and return without raising
+                # to uphold render_scene's no-raise contract.
+                await session.rollback()
+                render = await render_repo.start_attempt(scene_id, attempt=ctx.get("job_try", 1))
+                await render_repo.mark_failed(render.id, stderr=f"audio fetch failed: {exc}")
+                await scene_repo.update_status(scene_id, SceneStatus.FAILED)
+                await session.commit()
+                log.warning("render.audio_fetch_failed", scene_id=scene_id, error=str(exc)[:500])
+                return
 
             with (
                 tempfile.TemporaryDirectory() as in_s,
