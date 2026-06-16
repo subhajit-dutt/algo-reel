@@ -19,6 +19,10 @@ htmlcov/
 .idea/
 .vscode/
 
+# AI / agent tooling
+.claude/
+.junie/
+
 # Media
 .media/
 

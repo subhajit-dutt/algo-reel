@@ -9,6 +9,7 @@ from app.api.sse import router as sse_router
 from app.api.videos import router as videos_router
 from app.db.redis import create_redis_client
 from app.logging import configure_logging, get_logger
+from app.static import mount_frontend
 from app.workers.arq_settings import ORCHESTRATOR_QUEUE, redis_settings
 
 
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(videos_router)
     app.include_router(sse_router)
+    mount_frontend(app)  # mount last: it's a catch-all SPA fallback at "/"
     return app
 
 

@@ -35,6 +35,10 @@ class WorkerSettings:
     max_tries: ClassVar[int] = 2
     job_timeout: ClassVar[int] = 1200
     keep_result: ClassVar[int] = 3600
+    # Refresh the health key every 60s (TTL 61s) so the API's job-creation
+    # liveness check sees a dead orchestrator within a minute; arq's 3600s
+    # default would report a dead worker as alive for up to an hour.
+    health_check_interval: ClassVar[int] = 60
     on_startup: ClassVar[Callable[..., Any]] = _on_startup
     redis_settings: ClassVar[RedisSettings] = redis_settings()
 
@@ -46,5 +50,9 @@ class RenderWorkerSettings:
     max_tries: ClassVar[int] = 2
     job_timeout: ClassVar[int] = 600
     keep_result: ClassVar[int] = 3600
+    # Refresh the health key every 60s (TTL 61s) so the orchestrator's pre-fan-out
+    # liveness check sees a dead pool within a minute; arq's 3600s default would
+    # report a dead worker as alive for up to an hour.
+    health_check_interval: ClassVar[int] = 60
     on_startup: ClassVar[Callable[..., Any]] = _on_startup
     redis_settings: ClassVar[RedisSettings] = redis_settings()

@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+/* ───────────── design tokens ───────────── */
+:root {
+  /* Dark, ink-black base. Single bold accent (chartreuse). Semantic tones for
+     status. Surfaces step up in luminance so cards read as elevated. */
+  --background: oklch(0.145 0.005 240);
+  --foreground: oklch(0.965 0.005 240);
+
+  --surface: oklch(0.185 0.006 240);
+  --surface-2: oklch(0.215 0.007 240);
+
+  --muted: oklch(0.32 0.006 240);
+  --muted-foreground: oklch(0.65 0.01 240);
+
+  --border: oklch(0.27 0.006 240);
+  --border-strong: oklch(0.38 0.007 240);
+
+  --accent: oklch(0.93 0.22 117); /* chartreuse */
+  --accent-foreground: oklch(0.16 0.02 117);
+
+  --info: oklch(0.78 0.13 230);
+  --warning: oklch(0.83 0.16 80);
+  --success: oklch(0.78 0.16 152);
+  --destructive: oklch(0.68 0.21 27);
+  --destructive-foreground: oklch(0.98 0.01 27);
+
+  --ring: var(--accent);
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Instrument Serif", "Geist", ui-serif, Georgia, serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+
+  --animate-pulse-soft: algo-pulse 1.6s ease-in-out infinite;
+  --animate-fade-in-up: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* tailwind-animate shims for radix data-state */
+@keyframes algo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes fade-in-0 {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-out-0 {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes zoom-in-95 {
+  from { transform: translate(-50%, -50%) scale(0.95); }
+  to { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes zoom-out-95 {
+  from { transform: translate(-50%, -50%) scale(1); }
+  to { transform: translate(-50%, -50%) scale(0.95); }
+}
+
+[data-state="open"].animate-in {
+  animation: fade-in-0 150ms ease-out, zoom-in-95 150ms ease-out;
+}
+[data-state="closed"].animate-out {
+  animation: fade-out-0 120ms ease-in, zoom-out-95 120ms ease-in;
+}
+
+/* ───────────── base ───────────── */
+@layer base {
+  html,
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  body {
+    background-image:
+      radial-gradient(
+        circle at 12% -10%,
+        color-mix(in oklch, var(--accent) 8%, transparent) 0%,
+        transparent 40%
+      ),
+      radial-gradient(
+        circle at 110% 0%,
+        color-mix(in oklch, var(--info) 10%, transparent) 0%,
+        transparent 50%
+      );
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  /* subtle film grain — adds material character */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--accent) 50%, transparent);
+    color: var(--accent-foreground);
+  }
+
+  /* tighten serif display when used as italic */
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+  }
+}
+
+/* ───────────── utility classes (small surface) ───────────── */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
