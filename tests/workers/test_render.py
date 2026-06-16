@@ -135,6 +135,44 @@ async def test_render_scene_failure_marks_failed(
     assert all(r.status == "failed" for r in rows)
 
 
+async def test_render_scene_missing_audio_file_marks_failed(
+    clean_db: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = LocalStorage(tmp_path)
+    monkeypatch.setattr("app.workers.render.get_storage", lambda: storage)
+    monkeypatch.setattr("app.workers.render.get_renderer", lambda renderer: _FakeRenderer())
+    _stub_codegen(monkeypatch)
+
+    job = await JobRepo(clean_db).create(
+        user_prompt="p", renderer=Renderer.MANIM, voice="alloy", duration_target_seconds=60
+    )
+    await clean_db.flush()
+    script = VideoScript(
+        title="t",
+        renderer=Renderer.MANIM,
+        voice="alloy",
+        total_duration=5.0,
+        scenes=[DomainScene(index=0, narration="hi", visual_prompt="v", duration_seconds=5.0)],
+    )
+    scenes = await SceneRepo(clean_db).bulk_insert_from_script(job.id, script)
+    sid = scenes[0].id
+    # AUDIO asset row exists, but the storage file was never written.
+    key = f"audio/{job.id}/{sid}.wav"
+    await AssetRepo(clean_db).record(job.id, sid, AssetKind.AUDIO, key, 123, "audio/wav")
+    await clean_db.commit()
+
+    # No exception must propagate: render_scene upholds the per-scene no-raise contract.
+    await render_scene({}, sid, 1)
+
+    clean_db.expire_all()
+    scene = await SceneRepo(clean_db).get(sid)
+    assert scene is not None
+    assert scene.status == SceneStatus.FAILED.value
+    rows = (await clean_db.execute(select(Render).where(Render.scene_id == sid))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "failed"
+
+
 async def test_render_scene_idempotent_skip(
     clean_db: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
