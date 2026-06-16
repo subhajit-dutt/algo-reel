@@ -19,9 +19,15 @@ htmlcov/
 .idea/
 .vscode/
 
+# OS
+.DS_Store
+
 # AI / agent tooling
 .claude/
 .junie/
+
+# Docs (internal planning/specs — not published)
+docs/
 
 # Media
 .media/
