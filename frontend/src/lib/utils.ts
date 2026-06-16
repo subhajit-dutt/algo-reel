@@ -1,8 +1,19 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+import type { JobError, Renderer } from "@/types/api";
+
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
+}
+
+export function formatRenderer(renderer: Renderer): string {
+  return renderer.replace("_", " · ");
+}
+
+/** Human-readable failure reason, in precedence order. */
+export function jobErrorReason(error: JobError | null | undefined): string | undefined {
+  return error?.reason ?? error?.message ?? error?.type;
 }
 
 export function formatCost(usd: string | number): string {

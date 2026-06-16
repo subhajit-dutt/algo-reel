@@ -31,10 +31,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   const pulsing = PULSE_STATUSES.has(status);
   return (
     <Badge tone={TONE[status]} className="gap-2">
-      <span
-        className="size-1.5 rounded-full bg-current"
-        style={pulsing ? { animation: "algo-pulse 1.6s ease-in-out infinite" } : undefined}
-      />
+      <span className={`size-1.5 rounded-full bg-current ${pulsing ? "animate-pulse-soft" : ""}`} />
       {label}
     </Badge>
   );
