@@ -1,7 +1,6 @@
 "use client";
 
-import { format } from "date-fns";
-import { AlertOctagon, ArrowLeft, Ban, Download, Loader2, Radio } from "lucide-react";
+import { AlertOctagon, ArrowLeft, Ban, Download, RotateCw, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -20,20 +19,23 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { ProgressBar } from "@/components/videos/ProgressBar";
-import { ScenesList } from "@/components/videos/ScenesList";
-import { StatusBadge } from "@/components/videos/StatusBadge";
+import { JobHeader } from "@/components/videos/JobHeader";
+import { SceneFilmstrip } from "@/components/videos/SceneFilmstrip";
+import { VideoDetailSkeleton } from "@/components/videos/VideoDetailSkeleton";
+import { VideoHero } from "@/components/videos/VideoHero";
 import { useCancelJob } from "@/hooks/useCancelJob";
 import { useJob } from "@/hooks/useJob";
 import { useJobEvents } from "@/hooks/useJobEvents";
+import { useResumeJob } from "@/hooks/useResumeJob";
 import { ApiError } from "@/lib/api/client";
-import { formatCost } from "@/lib/utils";
+import { jobErrorReason } from "@/lib/utils";
 import { type JobResponse, isTerminal } from "@/types/api";
 
 interface VideoDetailViewProps {
   id: number;
 }
+
+const RESUMABLE = new Set<JobResponse["status"]>(["failed", "partially_failed"]);
 
 export function VideoDetailView({ id }: VideoDetailViewProps) {
   const query = useJob(id);
@@ -45,18 +47,14 @@ export function VideoDetailView({ id }: VideoDetailViewProps) {
     if (!job) return;
     if (job.status === "failed") {
       toast.error(`Job #${job.id} failed`, {
-        description: job.error?.reason ?? job.error?.message ?? job.error?.type,
+        description: jobErrorReason(job.error),
         id: `job-${job.id}-failed`,
       });
     }
   }, [job]);
 
   if (query.isLoading) {
-    return (
-      <CenteredMessage>
-        <Loader2 className="size-4 animate-spin" /> loading job #{id}…
-      </CenteredMessage>
-    );
+    return <VideoDetailSkeleton />;
   }
   if (query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -69,8 +67,7 @@ export function VideoDetailView({ id }: VideoDetailViewProps) {
   if (!job) {
     return (
       <CenteredMessage>
-        <AlertOctagon className="size-4 text-destructive" />
-        failed to load
+        <AlertOctagon className="size-4 text-destructive" /> failed to load job #{id}
         <BackHome />
       </CenteredMessage>
     );
@@ -81,137 +78,75 @@ export function VideoDetailView({ id }: VideoDetailViewProps) {
       <div className="mb-6 flex items-center justify-between">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" /> all jobs
         </Link>
         <LiveIndicator terminal={terminal} />
       </div>
 
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            job
-          </span>
-          <span className="font-mono text-2xl tabular-nums text-foreground">
-            #{job.id.toString().padStart(5, "0")}
-          </span>
-          <StatusBadge status={job.status} />
-        </div>
+      <VideoHero job={job} />
 
-        <h1 className="font-display text-3xl leading-tight tracking-tight lg:text-4xl">
-          {job.user_prompt}
-        </h1>
+      <JobHeader job={job} />
 
-        <MetaGrid job={job} />
-      </header>
+      {job.error && <ErrorPanel job={job} />}
 
-      {!terminal && (
-        <section className="mt-10">
-          <Card>
-            <CardContent className="space-y-4 p-5">
-              <ProgressBar progress={job.progress} />
-            </CardContent>
-          </Card>
-        </section>
-      )}
+      <SceneFilmstrip scenes={job.scenes} />
 
-      {job.error && (
-        <section className="mt-6">
-          <Card className="border-destructive/40 bg-destructive/5">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2">
-                <AlertOctagon className="size-4 text-destructive" />
-                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-destructive">
-                  failure · {job.error.type}
-                </span>
-              </div>
-              <div className="mt-2 space-y-1 text-sm">
-                {job.error.reason && (
-                  <ErrorLine label="reason" value={String(job.error.reason)} />
-                )}
-                {job.error.message && (
-                  <ErrorLine label="message" value={String(job.error.message)} />
-                )}
-                {job.error.value !== undefined && (
-                  <ErrorLine label="value" value={String(job.error.value)} />
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-      )}
-
-      <section className="mt-10">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            scenes
-          </h2>
-          <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
-            {job.scenes.length} total
-          </span>
-        </div>
-        <ScenesList scenes={job.scenes} />
-      </section>
-
-      <Separator className="my-10" />
-
-      <footer className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          {job.output_url && (
-            <Button asChild variant="secondary">
-              <a href={job.output_url} target="_blank" rel="noreferrer">
-                <Download className="size-4" /> download mp4
-              </a>
-            </Button>
-          )}
-        </div>
-        {!terminal && <CancelButton id={id} />}
-      </footer>
+      <Footer job={job} terminal={terminal} />
     </div>
   );
 }
 
-function MetaGrid({ job }: { job: JobResponse }) {
+function Footer({ job, terminal }: { job: JobResponse; terminal: boolean }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border py-4 sm:grid-cols-4">
-      <MetaCell label="renderer" value={job.renderer} />
-      <MetaCell label="voice" value={job.voice} />
-      <MetaCell label="target" value={`${job.duration_target_seconds}s`} />
-      <MetaCell label="cost" value={formatCost(job.cost_usd)} />
-      <MetaCell
-        label="created"
-        value={format(new Date(job.created_at), "MMM d · HH:mm:ss")}
-        wide
-      />
-      <MetaCell
-        label="updated"
-        value={format(new Date(job.updated_at), "MMM d · HH:mm:ss")}
-        wide
-      />
-    </dl>
+    <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-6">
+      <div className="flex flex-wrap items-center gap-2.5">
+        {job.output_url && (
+          <Button asChild variant="primary">
+            <a href={job.output_url} target="_blank" rel="noreferrer">
+              <Download className="size-4" /> download mp4
+            </a>
+          </Button>
+        )}
+        <ShareButton />
+        {RESUMABLE.has(job.status) && <ResumeButton id={job.id} />}
+      </div>
+      {!terminal && <CancelButton id={job.id} />}
+    </footer>
   );
 }
 
-function MetaCell({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+function ShareButton() {
+  const onShare = async () => {
+    await navigator.clipboard.writeText(window.location.href);
+    toast.success("link copied to clipboard");
+  };
   return (
-    <div className={wide ? "sm:col-span-2" : ""}>
-      <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </dt>
-      <dd className="mt-0.5 font-mono text-sm tabular-nums text-foreground">{value}</dd>
-    </div>
+    <Button variant="ghost" onClick={onShare}>
+      <Share2 className="size-4" /> share link
+    </Button>
   );
 }
 
-function ErrorLine({ label, value }: { label: string; value: string }) {
+function ResumeButton({ id }: { id: number }) {
+  const resume = useResumeJob(id);
+  const onResume = async () => {
+    try {
+      await resume.mutateAsync();
+      toast.success(`job #${id} resumed`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        toast.info("job can't be resumed");
+        return;
+      }
+      toast.error(err instanceof ApiError ? err.message : "resume failed");
+    }
+  };
   return (
-    <div className="flex gap-3 font-mono text-xs">
-      <span className="w-16 shrink-0 uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </span>
-      <span className="text-foreground">{value}</span>
-    </div>
+    <Button variant="secondary" onClick={onResume} disabled={resume.isPending}>
+      <RotateCw className="size-4" /> resume
+    </Button>
   );
 }
 
@@ -227,8 +162,7 @@ function CancelButton({ id }: { id: number }) {
         toast.info("already terminal — nothing to cancel");
         return;
       }
-      const msg = err instanceof ApiError ? err.message : "cancel failed";
-      toast.error(msg);
+      toast.error(err instanceof ApiError ? err.message : "cancel failed");
     }
   };
 
@@ -255,20 +189,46 @@ function CancelButton({ id }: { id: number }) {
   );
 }
 
+function ErrorPanel({ job }: { job: JobResponse }) {
+  const error = job.error;
+  if (!error) return null;
+  return (
+    <Card className="mt-6 rounded-2xl border-destructive/40 bg-destructive/5">
+      <CardContent className="p-5">
+        <div className="flex items-center gap-2">
+          <AlertOctagon className="size-4 text-destructive" />
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-destructive">
+            failure · {error.type}
+          </span>
+        </div>
+        <div className="mt-2 space-y-1 text-sm">
+          {error.reason && <ErrorLine label="reason" value={String(error.reason)} />}
+          {error.message && <ErrorLine label="message" value={String(error.message)} />}
+          {error.value !== undefined && <ErrorLine label="value" value={String(error.value)} />}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ErrorLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-3 font-mono text-xs">
+      <span className="w-16 shrink-0 uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-foreground">{value}</span>
+    </div>
+  );
+}
+
 function LiveIndicator({ terminal }: { terminal: boolean }) {
   if (terminal) {
-    return (
-      <Badge tone="neutral" className="gap-2">
-        <Radio className="size-3" /> stream closed
-      </Badge>
-    );
+    return <Badge tone="neutral">stream closed</Badge>;
   }
   return (
     <Badge tone="accent" className="gap-2">
-      <span
-        className="size-1.5 rounded-full bg-current"
-        style={{ animation: "algo-pulse 1.6s ease-in-out infinite" }}
-      />
+      <span className="size-1.5 rounded-full bg-current animate-pulse-soft" />
       live · sse
     </Badge>
   );

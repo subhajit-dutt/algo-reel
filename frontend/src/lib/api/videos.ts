@@ -12,3 +12,7 @@ export function getVideo(id: number, signal?: AbortSignal): Promise<JobResponse>
 export function cancelVideo(id: number): Promise<JobResponse> {
   return apiFetch<JobResponse>(`/api/videos/${id}`, { method: "DELETE" });
 }
+
+export function resumeVideo(id: number): Promise<JobResponse> {
+  return apiFetch<JobResponse>(`/api/videos/${id}/resume`, { method: "POST" });
+}

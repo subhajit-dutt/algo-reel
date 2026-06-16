@@ -9,6 +9,7 @@
 
   --surface: oklch(0.185 0.006 240);
   --surface-2: oklch(0.215 0.007 240);
+  --surface-sunken: oklch(0.12 0.006 240); /* below background — video letterbox / poster base */
 
   --muted: oklch(0.32 0.006 240);
   --muted-foreground: oklch(0.65 0.01 240);
@@ -37,6 +38,7 @@
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-sunken: var(--surface-sunken);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
@@ -56,6 +58,9 @@
 
   --animate-pulse-soft: algo-pulse 1.6s ease-in-out infinite;
   --animate-fade-in-up: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-spin-slow: spin 6s linear infinite;
+  --animate-spin-rev: spin 4s linear infinite reverse;
 }
 
 /* tailwind-animate shims for radix data-state */
@@ -79,6 +84,30 @@
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* honour reduced-motion: collapse decorative motion to a near-instant state */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
